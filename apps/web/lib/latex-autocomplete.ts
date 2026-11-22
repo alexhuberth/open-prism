@@ -16,7 +16,7 @@ interface LabelEntry {
   fileName: string;
 }
 
-function extractBibEntries(files: ProjectFile[]): BibEntry[] {
+export function extractBibEntries(files: ProjectFile[]): BibEntry[] {
   const entries: BibEntry[] = [];
   const entryRegex = /@\w+\s*\{\s*([^,\s]+)\s*,([\s\S]*?)(?=\n@|\s*$)/g;
   const titleRegex = /title\s*=\s*[{"]([^}"]+)[}"]/i;
@@ -41,7 +41,7 @@ function extractBibEntries(files: ProjectFile[]): BibEntry[] {
   return entries;
 }
 
-function extractLabels(files: ProjectFile[]): LabelEntry[] {
+export function extractLabels(files: ProjectFile[]): LabelEntry[] {
   const labels: LabelEntry[] = [];
   const labelRegex = /\\label\{([^}]+)\}/g;
 

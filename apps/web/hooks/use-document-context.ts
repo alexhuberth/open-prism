@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useAui } from "@assistant-ui/store";
+import { analyzeCompileDiagnostics } from "@/lib/latex-log-parser";
 import { buildProjectOutline } from "@/lib/latex-outline";
 import { useDocumentStore } from "@/stores/document-store";
 
@@ -28,6 +29,11 @@ export function useDocumentContext() {
   const fileName = useDocumentStore((s) => s.fileName);
   const content = useDocumentStore((s) => s.content);
   const selectionRange = useDocumentStore((s) => s.selectionRange);
+  const pdfData = useDocumentStore((s) => s.pdfData);
+  const compileError = useDocumentStore((s) => s.compileError);
+  const compileWarnings = useDocumentStore((s) => s.compileWarnings);
+  const compileWarningCount = useDocumentStore((s) => s.compileWarningCount);
+  const compileFullLog = useDocumentStore((s) => s.compileFullLog);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) ?? projects[0],
@@ -63,6 +69,53 @@ export function useDocumentContext() {
       .join("\n");
   }, [files, mainFileId]);
 
+  const compileStatusSummary = useMemo(() => {
+    const mainFile = files.find((f) => f.id === mainFileId) ?? files[0];
+    if (!compileError && !pdfData && compileWarningCount === 0) {
+      return "Estado de compilación: aún no compilado.";
+    }
+
+    const analysis = analyzeCompileDiagnostics({
+      fullLog: compileFullLog,
+      compileError,
+      compileWarnings,
+      compiler,
+      projectFileNames: files.map((f) => f.name),
+      mainFileName: mainFile?.name,
+    });
+
+    const statusLine = compileError
+      ? `Estado de compilación: ERROR (${analysis.errorCount} error(es), ${analysis.warningCount} advertencia(s)).`
+      : `Estado de compilación: PDF compilado correctamente (${Math.max(compileWarningCount, analysis.warningCount)} advertencia(s)).`;
+
+    const topItems = analysis.diagnostics
+      .slice(0, 5)
+      .map((item) => {
+        const loc = item.file
+          ? item.line
+            ? `${item.file}:${item.line}`
+            : item.file
+          : (mainFile?.name ?? "main.tex");
+        return `- [${item.severity.toUpperCase()}] ${loc}: ${item.title}`;
+      })
+      .join("\n");
+
+    const engineHint = analysis.suggestedCompiler
+      ? `\nSugerencia detectada: el log indica incompatibilidad con "${compiler}". Considera cambiar a "${analysis.suggestedCompiler}" o "lualatex" mediante set_latex_compiler.`
+      : "";
+
+    return `${statusLine}${engineHint}${topItems ? `\nDiagnósticos recientes:\n${topItems}` : ""}`;
+  }, [
+    files,
+    mainFileId,
+    compiler,
+    pdfData,
+    compileError,
+    compileWarnings,
+    compileWarningCount,
+    compileFullLog,
+  ]);
+
   useEffect(() => {
     const selectionInfo = hasSelection
       ? `El usuario tiene seleccionado el siguiente texto en "${fileName}":\n\`\`\`\n${selectedText}\n\`\`\`\nPuedes usar replace_selection para proponer su reemplazo.`
@@ -78,6 +131,8 @@ export function useDocumentContext() {
           modelName: aiModel,
         },
         system: `Proyecto actual: "${activeProject?.name ?? "Proyecto"}" (motor: ${compiler}).
+${compileStatusSummary}
+
 Archivos del proyecto:
 ${projectFilesSummary}
 ${outlineBlock}
@@ -88,13 +143,14 @@ ${formatContentForContext(content)}
 
 ${selectionInfo}
 
-Si necesitas consultar otro archivo de la lista (por ejemplo .bib o capítulos incluidos), usa la herramienta read_project_file.`,
+Si necesitas consultar otro archivo de la lista (por ejemplo .bib o capítulos incluidos), usa read_project_file. Para inspeccionar el log completo o detalles de advertencias/errores, usa get_compile_diagnostics.`,
       }),
     });
   }, [
     aui,
     activeProject?.name,
     compiler,
+    compileStatusSummary,
     aiModel,
     projectFilesSummary,
     outlineSummary,

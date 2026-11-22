@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAui } from "@assistant-ui/react";
 import { toast } from "sonner";
 import {
@@ -10,15 +10,24 @@ import {
   AlertTriangleIcon,
   LoaderIcon,
   RefreshCwIcon,
-  MinusIcon,
-  PlusIcon,
   DownloadIcon,
   ScrollTextIcon,
-  SparklesIcon,
+  ScanIcon,
+  ChevronDownIcon,
+  CheckIcon,
 } from "lucide-react";
 import { CompileLogDialog } from "./compile-log-dialog";
+import { CompileRecordsPanel } from "./compile-records-panel";
 import { useDocumentStore } from "@/stores/document-store";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -28,17 +37,15 @@ import {
 } from "@/components/ui/select";
 import { compileActiveProject } from "@/lib/compile-active-project";
 import type { LatexCompiler } from "@/lib/latex-compiler";
-import { parseLatexLogErrors } from "@/lib/text-diff";
 
-const ZOOM_OPTIONS = [
-  { value: "0.5", label: "50%" },
-  { value: "0.75", label: "75%" },
-  { value: "1", label: "100%" },
-  { value: "1.25", label: "125%" },
-  { value: "1.5", label: "150%" },
-  { value: "2", label: "200%" },
-  { value: "3", label: "300%" },
-  { value: "4", label: "400%" },
+const ZOOM_PRESETS = [
+  { value: 0.5, label: "50%" },
+  { value: 0.75, label: "75%" },
+  { value: 1, label: "100%" },
+  { value: 1.5, label: "150%" },
+  { value: 2, label: "200%" },
+  { value: 3, label: "300%" },
+  { value: 4, label: "400%" },
 ];
 
 const PdfViewer = dynamic(
@@ -81,14 +88,10 @@ export function PdfPreview() {
     page: number;
     nonce: number;
   } | null>(null);
+  const [fitToWidth, setFitToWidth] = useState<boolean>(true);
   const [scale, setScale] = useState<number>(1.0);
   const [logDialogOpen, setLogDialogOpen] = useState(false);
   const compiledProjectsRef = useRef<Set<string>>(new Set());
-
-  const parsedErrors = useMemo(
-    () => (compileError ? parseLatexLogErrors(compileError) : []),
-    [compileError],
-  );
 
   useEffect(() => {
     if (!pdfSyncTarget) return;
@@ -195,8 +198,24 @@ export function PdfPreview() {
     runCompile,
   ]);
 
-  const zoomIn = () => setScale((s) => Math.min(4, s + 0.1));
-  const zoomOut = () => setScale((s) => Math.max(0.25, s - 0.1));
+  const zoomIn = useCallback(() => {
+    setFitToWidth(false);
+    setScale((s) => Math.min(4, Math.round((s + 0.15) * 100) / 100));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setFitToWidth(false);
+    setScale((s) => Math.max(0.25, Math.round((s - 0.15) * 100) / 100));
+  }, []);
+
+  const handleSelectFitToWidth = useCallback(() => {
+    setFitToWidth(true);
+  }, []);
+
+  const handleSelectZoomPreset = useCallback((preset: number) => {
+    setFitToWidth(false);
+    setScale(preset);
+  }, []);
 
   const handleDownload = () => {
     if (!pdfData) return;
@@ -237,9 +256,14 @@ export function PdfPreview() {
     }));
   };
 
-  const handleScaleChange = (newScale: number) => {
+  const handleFitScaleChange = useCallback((newScale: number) => {
     setScale(newScale);
-  };
+  }, []);
+
+  const handleManualScaleChange = useCallback((newScale: number) => {
+    setFitToWidth(false);
+    setScale(newScale);
+  }, []);
 
   const handleCompilerChange = (nextCompiler: string) => {
     const resolved = nextCompiler as LatexCompiler;
@@ -247,110 +271,58 @@ export function PdfPreview() {
     runCompile(resolved);
   };
 
-  const handleJumpToMainLine = (lineNumber: number) => {
-    const state = useDocumentStore.getState();
-    const mainFile =
-      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
-    if (!mainFile) return;
+  const handleJumpToLocation = useCallback(
+    (targetFileName: string | undefined, lineNumber: number) => {
+      const state = useDocumentStore.getState();
+      const targetFile =
+        (targetFileName &&
+          (state.files.find((f) => f.name === targetFileName) ??
+            state.files.find(
+              (f) =>
+                f.name.endsWith(`/${targetFileName}`) ||
+                targetFileName.endsWith(`/${f.name}`),
+            ))) ||
+        state.files.find((f) => f.id === state.mainFileId) ||
+        state.files[0];
+      if (!targetFile) return;
 
-    if (state.activeFileId !== mainFile.id) {
-      state.setActiveFile(mainFile.id);
-    }
+      if (state.activeFileId !== targetFile.id) {
+        state.setActiveFile(targetFile.id);
+      }
 
-    const lines = (mainFile.content ?? "").split("\n");
-    let offset = 0;
-    for (let i = 0; i < lineNumber - 1 && i < lines.length; i++) {
-      offset += lines[i].length + 1;
-    }
+      const lines = (targetFile.content ?? "").split("\n");
+      let offset = 0;
+      for (let i = 0; i < lineNumber - 1 && i < lines.length; i++) {
+        offset += lines[i].length + 1;
+      }
 
-    setTimeout(() => {
-      useDocumentStore.getState().requestJumpToPosition(offset);
-    }, 30);
-  };
+      setTimeout(() => {
+        useDocumentStore.getState().requestJumpToPosition(offset);
+      }, 35);
+    },
+    [],
+  );
 
-  const handleFixWithAI = () => {
-    if (!compileError) return;
-    const state = useDocumentStore.getState();
-    const mainFile =
-      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
-
-    if (mainFile && state.activeFileId !== mainFile.id) {
-      state.setActiveFile(mainFile.id);
-    }
-
-    const prompt = `Ocurrió el siguiente error al compilar con ${state.compiler} (archivo principal: ${mainFile?.name ?? "document.tex"}):\n\n\`\`\`\n${compileError.slice(0, 1500)}\n\`\`\`\n\nPor favor diagnostica el problema y propón el cambio con find_and_replace para corregirlo.`;
-
-    aui.thread().append({
-      role: "user",
-      content: [{ type: "text", text: prompt }],
-    });
-  };
+  const handleFixWithAI = useCallback(
+    (customPrompt: string) => {
+      aui.thread().append({
+        role: "user",
+        content: [{ type: "text", text: customPrompt }],
+      });
+    },
+    [aui],
+  );
 
   const renderContent = () => {
     if (compileError) {
       return (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-auto bg-muted/30 p-6">
-          <AlertCircleIcon className="mb-3 size-10 text-destructive" />
-          <h2 className="mb-2 font-medium text-destructive text-lg">
-            Error de compilación
-          </h2>
-
-          {parsedErrors.length > 0 && (
-            <div className="mb-3 w-full max-w-lg space-y-1.5">
-              {parsedErrors.map((err, idx) => (
-                <div
-                  key={`${idx}-${err.line ?? "x"}`}
-                  className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs"
-                >
-                  <span className="truncate font-mono text-destructive">
-                    {err.message}
-                  </span>
-                  {err.line != null && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-6 shrink-0 px-2 text-xs"
-                      onClick={() => handleJumpToMainLine(err.line!)}
-                    >
-                      Ir a línea {err.line}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <pre className="mb-4 max-h-56 w-full max-w-lg overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-muted-foreground text-xs">
-            {compileError}
-          </pre>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={handleFixWithAI}>
-              <SparklesIcon className="mr-1.5 size-4" />
-              Corregir con IA
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => runCompile()}
-              disabled={isCompiling}
-            >
-              <RefreshCwIcon className="mr-1.5 size-4" />
-              Reintentar
-            </Button>
-            {(compileFullLog || compileBuildId) && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setLogDialogOpen(true)}
-              >
-                <ScrollTextIcon className="mr-1.5 size-4" />
-                Ver log completo
-              </Button>
-            )}
-          </div>
-        </div>
+        <CompileRecordsPanel
+          mode="panel"
+          onJumpToLocation={handleJumpToLocation}
+          onFixWithAI={handleFixWithAI}
+          onSwitchCompilerAndCompile={handleCompilerChange}
+          onRetryCompile={() => runCompile()}
+        />
       );
     }
 
@@ -386,21 +358,38 @@ export function PdfPreview() {
       <PdfViewer
         data={pdfData}
         scale={scale}
+        fitToWidth={fitToWidth}
         jumpToPage={jumpToPage}
         syncHighlight={pdfSyncTarget}
         onError={setPdfError}
         onLoadSuccess={handleLoadSuccess}
         onCurrentPageChange={handleCurrentPageChange}
-        onScaleChange={handleScaleChange}
+        onFitScaleChange={handleFitScaleChange}
+        onManualScaleChange={handleManualScaleChange}
         onPageDoubleClick={handlePageDoubleClick}
       />
     );
   };
 
   return (
-    <div className="flex h-full flex-col bg-muted/50">
-      <div className="flex h-9 items-center justify-between border-border border-b bg-background px-2">
-        <div className="flex items-center gap-1.5">
+    <div
+      className="@container flex h-full flex-col bg-muted/50"
+      onKeyDown={(e) => {
+        if (!(e.metaKey || e.ctrlKey)) return;
+        if (e.key === "0") {
+          e.preventDefault();
+          handleSelectFitToWidth();
+        } else if (e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          zoomIn();
+        } else if (e.key === "-") {
+          e.preventDefault();
+          zoomOut();
+        }
+      }}
+    >
+      <div className="flex h-9 items-center justify-between gap-2 overflow-x-auto border-border border-b bg-background px-2 [&::-webkit-scrollbar]:hidden">
+        <div className="flex shrink-0 items-center gap-1">
           {isSaving && (
             <>
               <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
@@ -475,7 +464,7 @@ export function PdfPreview() {
               size="sm"
               className="ml-1 h-6 gap-1 px-1.5 text-xs"
               onClick={() => setLogDialogOpen(true)}
-              title="Ver advertencias y log de compilación"
+              title="Registros: ver advertencias, errores y log completo"
             >
               {compileWarningCount > 0 ? (
                 <>
@@ -492,10 +481,10 @@ export function PdfPreview() {
         </div>
 
         {pdfData && (
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {numPages > 1 ? (
-              <div className="mr-2 flex items-center gap-1 whitespace-nowrap text-muted-foreground text-xs">
-                <span>Pág.</span>
+              <div className="mr-1 flex items-center gap-1 whitespace-nowrap text-muted-foreground text-xs">
+                <span className="@[450px]:inline hidden">Pág.</span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -509,48 +498,82 @@ export function PdfPreview() {
                       handlePageJumpCommit();
                     }
                   }}
-                  className="h-5 w-10 rounded border border-input bg-background px-1 text-center text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="h-5 w-8 rounded border border-input bg-background px-1 text-center text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                 />
                 <span>/ {numPages}</span>
               </div>
             ) : (
-              <span className="mr-2 whitespace-nowrap text-muted-foreground text-xs">
+              <span className="mr-1 whitespace-nowrap text-muted-foreground text-xs">
                 {numPages} {numPages === 1 ? "página" : "páginas"}
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6"
-              onClick={zoomOut}
-              disabled={scale <= 0.25}
-            >
-              <MinusIcon className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6"
-              onClick={zoomIn}
-              disabled={scale >= 4}
-            >
-              <PlusIcon className="size-3.5" />
-            </Button>
-            <Select
-              value={scale.toString()}
-              onValueChange={(v) => setScale(Number(v))}
-            >
-              <SelectTrigger size="sm" className="h-6! w-auto text-xs">
-                <SelectValue>{Math.round(scale * 100)}%</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {ZOOM_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 whitespace-nowrap px-1.5 font-normal text-xs"
+                  aria-label="Opciones de zoom del PDF"
+                  title={
+                    fitToWidth
+                      ? "Ajustar al tamaño (⌘0)"
+                      : `Zoom ${Math.round(scale * 100)}%`
+                  }
+                >
+                  <ScanIcon className="size-3.5 text-muted-foreground" />
+                  <span>
+                    {fitToWidth ? (
+                      <>
+                        Ajustar
+                        <span className="@[480px]:inline hidden">
+                          {" "}
+                          al tamaño
+                        </span>
+                      </>
+                    ) : (
+                      `${Math.round(scale * 100)}%`
+                    )}
+                  </span>
+                  <ChevronDownIcon className="size-3 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={handleSelectFitToWidth}>
+                  <CheckIcon
+                    className={`size-3.5 ${fitToWidth ? "opacity-100" : "opacity-0"}`}
+                  />
+                  <span>Ajustar al tamaño</span>
+                  <DropdownMenuShortcut>⌘0</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={zoomIn} disabled={scale >= 4}>
+                  <span className="size-3.5" />
+                  <span>Acercar</span>
+                  <DropdownMenuShortcut>⌘+</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={zoomOut} disabled={scale <= 0.25}>
+                  <span className="size-3.5" />
+                  <span>Alejar</span>
+                  <DropdownMenuShortcut>⌘-</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {ZOOM_PRESETS.map((preset) => {
+                  const isActive =
+                    !fitToWidth && Math.abs(scale - preset.value) < 0.02;
+                  return (
+                    <DropdownMenuItem
+                      key={preset.value}
+                      onSelect={() => handleSelectZoomPreset(preset.value)}
+                    >
+                      <CheckIcon
+                        className={`size-3.5 ${isActive ? "opacity-100" : "opacity-0"}`}
+                      />
+                      <span>{preset.label}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="mx-0.5 h-4 w-px bg-border" />
             <Button
               variant="ghost"
@@ -570,7 +593,9 @@ export function PdfPreview() {
       <CompileLogDialog
         open={logDialogOpen}
         onOpenChange={setLogDialogOpen}
-        onJumpToLine={handleJumpToMainLine}
+        onJumpToLocation={handleJumpToLocation}
+        onFixWithAI={handleFixWithAI}
+        onSwitchCompilerAndCompile={handleCompilerChange}
       />
     </div>
   );

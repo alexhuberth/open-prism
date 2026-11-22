@@ -43,6 +43,7 @@ import {
   type ResolvedThemePalette,
 } from "@/lib/appearance";
 import { latexCompletionSource } from "@/lib/latex-autocomplete";
+import { createProjectAwareLatexLinter } from "@/lib/latex-linter";
 import { isImageFile, isTextFile } from "@/lib/project-files";
 import { useAppearanceStore } from "@/stores/appearance-store";
 import { useDocumentStore } from "@/stores/document-store";
@@ -579,7 +580,8 @@ export function LatexEditor() {
         highlightActiveLineGutter(),
         history(),
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
-        latex({ enableAutocomplete: false }),
+        latex({ enableAutocomplete: false, enableLinting: false }),
+        createProjectAwareLatexLinter(),
         autocompletion({
           override: [latexCompletionSource, builtinLatexCompletionSource(true)],
           defaultKeymap: true,

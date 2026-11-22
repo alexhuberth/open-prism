@@ -16,6 +16,7 @@ import {
 } from "@assistant-ui/react";
 import {
   CheckIcon,
+  CpuIcon,
   ExpandIcon,
   FilePlus2Icon,
   FileSearchIcon,
@@ -24,6 +25,7 @@ import {
   PlayIcon,
   PlusIcon,
   ReplaceIcon,
+  ScrollTextIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
@@ -34,6 +36,8 @@ import {
   DiffReviewDialog,
 } from "@/components/workspace/diff-viewer";
 import { compileActiveProject } from "@/lib/compile-active-project";
+import type { LatexCompiler } from "@/lib/latex-compiler";
+import { analyzeCompileDiagnostics } from "@/lib/latex-log-parser";
 import {
   classifyFileName,
   isTextFile,
@@ -648,8 +652,344 @@ const CREATE_PROJECT_FILE_TOOL = {
   render: CreateProjectFileRender,
 };
 
+interface CompileDiagnosticsResult extends ToolResult {
+  compiler?: LatexCompiler;
+  mainFile?: string;
+  hasPdf?: boolean;
+  compileError?: string | null;
+  errorCount?: number;
+  warningCount?: number;
+  suggestedCompiler?: LatexCompiler | null;
+  diagnostics?: Array<{
+    severity: "error" | "warning";
+    title: string;
+    file?: string;
+    line?: number;
+    excerpt: string;
+  }>;
+  fullLogTail?: string;
+}
+
+function GetCompileDiagnosticsRender({
+  result,
+  status,
+}: ToolCallMessagePartProps<
+  { includeFullLog?: boolean },
+  CompileDiagnosticsResult
+>) {
+  const isComplete = result != null || status.type === "complete";
+  const hasError = result?.success === false;
+  const errCount = result?.errorCount ?? 0;
+  const warnCount = result?.warningCount ?? 0;
+
+  return (
+    <div className="my-1.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs">
+      {isComplete ? (
+        hasError ? (
+          <XIcon className="size-3.5 text-destructive" />
+        ) : (
+          <CheckIcon className="size-3.5 text-emerald-600" />
+        )
+      ) : (
+        <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+      )}
+      <ScrollTextIcon className="size-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">
+        {isComplete
+          ? `Registros analizados (${errCount} error(es), ${warnCount} advertencia(s))`
+          : "Leyendo registros de compilación..."}
+      </span>
+    </div>
+  );
+}
+
+const GET_COMPILE_DIAGNOSTICS_TOOL = {
+  toolName: "get_compile_diagnostics",
+  description:
+    "Read structured compilation errors, warnings, active compiler, suggested compiler, and compiler log tail for the current project",
+  parameters: z.object({
+    includeFullLog: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to include the tail of the raw LaTeX log (helpful for deep debugging)",
+      ),
+  }),
+  execute: async ({
+    includeFullLog = true,
+  }: {
+    includeFullLog?: boolean;
+  }): Promise<CompileDiagnosticsResult> => {
+    const state = useDocumentStore.getState();
+    const mainFile =
+      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
+
+    let fullLog = state.compileFullLog;
+    if (includeFullLog && !fullLog && state.compileBuildId) {
+      try {
+        const res = await fetch(
+          `/api/compile/log?id=${encodeURIComponent(state.compileBuildId)}`,
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { log?: string };
+          fullLog = data.log ?? null;
+        }
+      } catch {
+        // Ignore network fetch errors; still return parsed store state
+      }
+    }
+
+    const analysis = analyzeCompileDiagnostics({
+      fullLog,
+      compileError: state.compileError,
+      compileWarnings: state.compileWarnings,
+      compiler: state.compiler,
+      projectFileNames: state.files.map((f) => f.name),
+      mainFileName: mainFile?.name,
+    });
+
+    return {
+      success: true,
+      compiler: state.compiler,
+      mainFile: mainFile?.name,
+      hasPdf: Boolean(state.pdfData),
+      compileError: state.compileError,
+      errorCount: analysis.errorCount,
+      warningCount: Math.max(state.compileWarningCount, analysis.warningCount),
+      suggestedCompiler: analysis.suggestedCompiler,
+      diagnostics: analysis.diagnostics.slice(0, 15).map((d) => ({
+        severity: d.severity,
+        title: d.title,
+        file: d.file,
+        line: d.line,
+        excerpt: d.excerpt.slice(0, 800),
+      })),
+      ...(includeFullLog && fullLog
+        ? { fullLogTail: fullLog.slice(-12000) }
+        : {}),
+    };
+  },
+  render: GetCompileDiagnosticsRender,
+};
+
+interface CompilerToolResult extends ToolResult {
+  compiler?: LatexCompiler;
+  compiled?: boolean;
+  compileError?: string | null;
+  warningCount?: number;
+}
+
+function SetLatexCompilerRender({
+  args,
+  result,
+  status,
+}: ToolCallMessagePartProps<
+  { compiler: LatexCompiler; reason: string },
+  CompilerToolResult
+>) {
+  const aui = useAui();
+  const currentCompiler = useDocumentStore((s) => s.compiler);
+  const [applying, setApplying] = useState(false);
+
+  const handleReject = () => {
+    aui.part().addToolResult({
+      success: false,
+      rejected: true,
+      compiler: currentCompiler,
+      message: `El usuario decidió mantener el motor ${currentCompiler}.`,
+    });
+  };
+
+  const handleApplyAndCompile = async () => {
+    setApplying(true);
+    try {
+      const store = useDocumentStore.getState();
+      store.setProjectCompiler(args.compiler);
+      const compiled = await compileActiveProject(args.compiler);
+      const latest = useDocumentStore.getState();
+      aui.part().addToolResult({
+        success: true,
+        compiler: args.compiler,
+        compiled,
+        compileError: latest.compileError,
+        warningCount: latest.compileWarningCount,
+        message: compiled
+          ? `Motor cambiado a ${args.compiler} y compilado correctamente.`
+          : `Motor cambiado a ${args.compiler}, pero la compilación aún reportó errores.`,
+      });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  if (result != null) {
+    const isRejected = result.rejected === true;
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs">
+        {isRejected ? (
+          <XIcon className="size-4 shrink-0 text-muted-foreground" />
+        ) : result.compiled ? (
+          <CheckIcon className="size-4 shrink-0 text-emerald-600" />
+        ) : (
+          <CpuIcon className="size-4 shrink-0 text-amber-500" />
+        )}
+        <span className="text-muted-foreground">
+          {result.message || `Motor: ${result.compiler ?? args.compiler}`}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-border border-b bg-muted/50 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <CpuIcon className="size-4 text-primary" />
+          <span className="font-medium text-foreground text-xs">
+            Cambiar motor LaTeX: {currentCompiler} → {args.compiler}
+          </span>
+        </div>
+        {status.type === "running" && (
+          <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+        )}
+      </div>
+      {args.reason && (
+        <p className="px-3 py-2 text-muted-foreground text-xs">{args.reason}</p>
+      )}
+      <div className="flex items-center justify-end gap-1.5 border-border border-t bg-muted/20 px-3 py-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          onClick={handleReject}
+          disabled={applying || status.type === "running"}
+        >
+          Mantener {currentCompiler}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 gap-1 px-2.5 text-xs"
+          onClick={handleApplyAndCompile}
+          disabled={applying || status.type === "running"}
+        >
+          {applying ? (
+            <LoaderIcon className="size-3 animate-spin" />
+          ) : (
+            <PlayIcon className="size-3" />
+          )}
+          Usar {args.compiler} y compilar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const SET_LATEX_COMPILER_TOOL = {
+  toolName: "set_latex_compiler",
+  description:
+    "Propose switching the project's LaTeX compiler engine (pdflatex, lualatex, or xelatex) and recompiling, e.g. when fontspec or unicode-math requires xelatex or lualatex",
+  parameters: z.object({
+    compiler: z
+      .enum(["pdflatex", "lualatex", "xelatex"])
+      .describe("Target LaTeX compiler engine"),
+    reason: z
+      .string()
+      .describe("Short explanation in Spanish of why this compiler is needed"),
+  }),
+  render: SetLatexCompilerRender,
+};
+
+interface CompileProjectResult extends ToolResult {
+  compiled?: boolean;
+  compiler?: LatexCompiler;
+  hasPdf?: boolean;
+  compileError?: string | null;
+  errorCount?: number;
+  warningCount?: number;
+  diagnostics?: Array<{
+    severity: "error" | "warning";
+    title: string;
+    file?: string;
+    line?: number;
+    excerpt: string;
+  }>;
+}
+
+function CompileProjectRender({
+  result,
+  status,
+}: ToolCallMessagePartProps<Record<string, never>, CompileProjectResult>) {
+  const isComplete = result != null || status.type === "complete";
+  return (
+    <div className="my-1.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs">
+      {isComplete ? (
+        result?.compiled ? (
+          <CheckIcon className="size-3.5 text-emerald-600" />
+        ) : (
+          <XIcon className="size-3.5 text-destructive" />
+        )
+      ) : (
+        <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+      )}
+      <PlayIcon className="size-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">
+        {isComplete
+          ? result?.compiled
+            ? `Compilado correctamente (${result.warningCount ?? 0} advertencia(s))`
+            : `Compilación fallida (${result?.errorCount ?? 1} error(es))`
+          : "Compilando proyecto para verificar cambios..."}
+      </span>
+    </div>
+  );
+}
+
+const COMPILE_PROJECT_TOOL = {
+  toolName: "compile_project",
+  description:
+    "Trigger a LaTeX compilation of the current project to verify fixes and inspect any remaining errors or warnings",
+  parameters: z.object({}),
+  execute: async (): Promise<CompileProjectResult> => {
+    const compiled = await compileActiveProject();
+    const state = useDocumentStore.getState();
+    const mainFile =
+      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
+
+    const analysis = analyzeCompileDiagnostics({
+      fullLog: state.compileFullLog,
+      compileError: state.compileError,
+      compileWarnings: state.compileWarnings,
+      compiler: state.compiler,
+      projectFileNames: state.files.map((f) => f.name),
+      mainFileName: mainFile?.name,
+    });
+
+    return {
+      success: true,
+      compiled,
+      compiler: state.compiler,
+      hasPdf: Boolean(state.pdfData),
+      compileError: state.compileError,
+      errorCount: analysis.errorCount,
+      warningCount: Math.max(state.compileWarningCount, analysis.warningCount),
+      diagnostics: analysis.diagnostics.slice(0, 10).map((d) => ({
+        severity: d.severity,
+        title: d.title,
+        file: d.file,
+        line: d.line,
+        excerpt: d.excerpt.slice(0, 600),
+      })),
+    };
+  },
+  render: CompileProjectRender,
+};
+
 export const LatexTools: FC = memo(function LatexTools() {
   useAssistantTool(READ_PROJECT_FILE_TOOL);
+  useAssistantTool(GET_COMPILE_DIAGNOSTICS_TOOL);
+  useAssistantTool(SET_LATEX_COMPILER_TOOL);
+  useAssistantTool(COMPILE_PROJECT_TOOL);
   useAssistantTool(INSERT_LATEX_TOOL);
   useAssistantTool(REPLACE_SELECTION_TOOL);
   useAssistantTool(FIND_AND_REPLACE_TOOL);

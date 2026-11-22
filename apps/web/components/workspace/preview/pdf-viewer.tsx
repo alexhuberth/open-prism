@@ -8,7 +8,8 @@ import { LoaderIcon } from "lucide-react";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-const PAGE_GAP_PX = 16;
+const PAGE_GAP_PX = 24;
+const CONTAINER_PADDING_PX = 24;
 const OVERSCAN_PAGES = 2;
 
 export interface PdfSyncHighlight {
@@ -23,29 +24,38 @@ export interface PdfSyncHighlight {
 interface PdfViewerProps {
   data: Uint8Array;
   scale: number;
+  fitToWidth: boolean;
   jumpToPage?: { page: number; nonce: number } | null;
   syncHighlight?: PdfSyncHighlight | null;
   onError?: (error: string) => void;
   onLoadSuccess?: (numPages: number) => void;
   onCurrentPageChange?: (page: number) => void;
-  onScaleChange?: (scale: number) => void;
+  onFitScaleChange?: (scale: number) => void;
+  onManualScaleChange?: (scale: number) => void;
   onPageDoubleClick?: (hit: { page: number; xPt: number; yPt: number }) => void;
 }
 
 export function PdfViewer({
   data,
   scale,
+  fitToWidth,
   jumpToPage,
   syncHighlight,
   onError,
   onLoadSuccess,
   onCurrentPageChange,
-  onScaleChange,
+  onFitScaleChange,
+  onManualScaleChange,
   onPageDoubleClick,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const hasSetInitialScale = useRef(false);
   const lastReportedPage = useRef(1);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const prevFileRef = useRef<{
+    bytes: Uint8Array;
+    fileObj: { data: Uint8Array };
+  } | null>(null);
 
   const [numPages, setNumPages] = useState(0);
   const [basePageSize, setBasePageSize] = useState({
@@ -57,9 +67,55 @@ export function PdfViewer({
   const file = useMemo(() => {
     const pdfData =
       data instanceof Uint8Array ? data : new Uint8Array(Object.values(data));
-    hasSetInitialScale.current = false;
-    return { data: pdfData.slice() };
+    const prev = prevFileRef.current;
+    if (prev && prev.bytes.length === pdfData.length) {
+      let identical = true;
+      for (let i = 0; i < pdfData.length; i++) {
+        if (prev.bytes[i] !== pdfData[i]) {
+          identical = false;
+          break;
+        }
+      }
+      if (identical) {
+        return prev.fileObj;
+      }
+    }
+    const bytesCopy = pdfData.slice();
+    const fileObj = { data: bytesCopy };
+    prevFileRef.current = { bytes: bytesCopy, fileObj };
+    return fileObj;
   }, [data]);
+
+  const computeAndApplyFitScale = useCallback(() => {
+    if (!fitToWidth || !containerRef.current || !onFitScaleChange) return;
+    if (basePageSize.width <= 0) return;
+
+    const availableWidth = Math.max(
+      140,
+      containerRef.current.clientWidth - CONTAINER_PADDING_PX,
+    );
+    const nextFit = Math.max(
+      0.25,
+      Math.min(4, availableWidth / basePageSize.width),
+    );
+    if (Math.abs(nextFit - scaleRef.current) > 0.008) {
+      onFitScaleChange(nextFit);
+    }
+  }, [fitToWidth, basePageSize.width, onFitScaleChange]);
+
+  useEffect(() => {
+    if (!fitToWidth) return;
+    computeAndApplyFitScale();
+
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      computeAndApplyFitScale();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fitToWidth, computeAndApplyFitScale]);
 
   const scaledWidth = Math.round(basePageSize.width * scale);
   const scaledHeight = Math.round(basePageSize.height * scale);
@@ -69,7 +125,7 @@ export function PdfViewer({
     const container = containerRef.current;
     if (!container || numPages === 0) return;
 
-    const scrollTop = Math.max(0, container.scrollTop - PAGE_GAP_PX);
+    const scrollTop = Math.max(0, container.scrollTop - 12);
     const clientHeight = container.clientHeight || 800;
 
     const firstVisible = Math.max(1, Math.floor(scrollTop / slotPitch) + 1);
@@ -143,8 +199,8 @@ export function PdfViewer({
       originalWidth?: number;
       originalHeight?: number;
     }) => {
-      const origW = page.originalWidth ?? page.width / scale;
-      const origH = page.originalHeight ?? page.height / scale;
+      const origW = page.originalWidth ?? page.width / scaleRef.current;
+      const origH = page.originalHeight ?? page.height / scaleRef.current;
       if (origW > 0 && origH > 0) {
         setBasePageSize((prev) =>
           Math.abs(prev.width - origW) < 1 && Math.abs(prev.height - origH) < 1
@@ -152,16 +208,8 @@ export function PdfViewer({
             : { width: origW, height: origH },
         );
       }
-
-      if (hasSetInitialScale.current) return;
-      if (containerRef.current && onScaleChange && origW > 0) {
-        hasSetInitialScale.current = true;
-        const containerWidth = containerRef.current.clientWidth - 32;
-        const fitScale = containerWidth / origW;
-        onScaleChange(Math.max(0.25, Math.min(fitScale, 2)));
-      }
     },
-    [onScaleChange, scale],
+    [],
   );
 
   const handleLoadError = useCallback(
@@ -173,29 +221,32 @@ export function PdfViewer({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !onScaleChange) return;
+    if (!container || !onManualScaleChange) return;
 
     const handleWheel = (e: WheelEvent) => {
       if (e.metaKey || e.ctrlKey) {
         e.preventDefault();
         const delta = -e.deltaY * 0.001;
-        onScaleChange(Math.max(0.25, Math.min(4, scale + delta)));
+        onManualScaleChange(
+          Math.max(0.25, Math.min(4, scaleRef.current + delta)),
+        );
       }
     };
 
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [scale, onScaleChange]);
+  }, [onManualScaleChange]);
 
   return (
     <div
       ref={containerRef}
       onScroll={updateVisibleRange}
-      className="flex-1 overflow-auto"
+      className="flex-1 overflow-auto bg-zinc-200/70 dark:bg-zinc-950/60"
     >
-      <div className="flex flex-col items-center gap-4 p-4">
+      <div className="flex flex-col items-center p-3">
         <Document
           file={file}
+          className="flex flex-col items-center"
           onLoadSuccess={handleLoadSuccess}
           onLoadError={handleLoadError}
           loading={
@@ -212,49 +263,68 @@ export function PdfViewer({
             const hasHighlight = syncHighlight?.page === pageNum;
 
             return (
-              <div
-                key={pageNum}
-                data-page-number={pageNum}
-                style={{ width: scaledWidth, height: scaledHeight }}
-                onDoubleClick={(e) => {
-                  if (!onPageDoubleClick) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const xPt = (e.clientX - rect.left) / scale;
-                  const yPt = (e.clientY - rect.top) / scale;
-                  onPageDoubleClick({ page: pageNum, xPt, yPt });
-                }}
-                title="Doble clic para saltar a esta línea en el código (SyncTeX)"
-                className="relative flex shrink-0 items-center justify-center overflow-hidden bg-white shadow-md"
-              >
-                {shouldRender ? (
-                  <Page
-                    pageNumber={pageNum}
-                    scale={scale}
-                    onLoadSuccess={
-                      pageNum === 1 ? handlePageLoadSuccess : undefined
-                    }
-                    loading={
-                      <span className="text-muted-foreground text-xs">
-                        Página {pageNum}
-                      </span>
-                    }
-                  />
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    Página {pageNum}
-                  </span>
-                )}
-                {hasHighlight && syncHighlight && (
+              <div key={pageNum} className="flex flex-col items-center">
+                <div
+                  data-page-number={pageNum}
+                  style={{ width: scaledWidth, height: scaledHeight }}
+                  onDoubleClick={(e) => {
+                    if (!onPageDoubleClick) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const xPt = (e.clientX - rect.left) / scale;
+                    const yPt = (e.clientY - rect.top) / scale;
+                    onPageDoubleClick({ page: pageNum, xPt, yPt });
+                  }}
+                  title="Doble clic para saltar a esta línea en el código (SyncTeX)"
+                  className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-[2px] border border-slate-300/90 bg-white shadow-md dark:border-zinc-700/80"
+                >
+                  {shouldRender ? (
+                    <Page
+                      pageNumber={pageNum}
+                      scale={scale}
+                      onLoadSuccess={
+                        pageNum === 1 ? handlePageLoadSuccess : undefined
+                      }
+                      loading={
+                        <span className="text-muted-foreground text-xs">
+                          Página {pageNum}
+                        </span>
+                      }
+                    />
+                  ) : (
+                    <span className="text-muted-foreground text-xs">
+                      Página {pageNum}
+                    </span>
+                  )}
+                  {hasHighlight && syncHighlight && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute animate-pulse rounded border border-amber-500/80 bg-amber-400/25 shadow-sm"
+                      style={{
+                        left: Math.max(0, syncHighlight.xPt * scale - 4),
+                        top: Math.max(0, syncHighlight.yPt * scale - 2),
+                        width: Math.max(36, syncHighlight.widthPt * scale + 8),
+                        height: Math.max(
+                          16,
+                          syncHighlight.heightPt * scale + 6,
+                        ),
+                      }}
+                    />
+                  )}
+                </div>
+
+                {pageNum < numPages && (
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute animate-pulse rounded border border-amber-500/80 bg-amber-400/25 shadow-sm"
-                    style={{
-                      left: Math.max(0, syncHighlight.xPt * scale - 4),
-                      top: Math.max(0, syncHighlight.yPt * scale - 2),
-                      width: Math.max(36, syncHighlight.widthPt * scale + 8),
-                      height: Math.max(16, syncHighlight.heightPt * scale + 6),
-                    }}
-                  />
+                    data-page-divider={pageNum}
+                    style={{ height: PAGE_GAP_PX, width: scaledWidth }}
+                    className="flex shrink-0 select-none items-center gap-2.5 px-1"
+                  >
+                    <div className="h-px flex-1 bg-slate-400/75 dark:bg-zinc-600/85" />
+                    <span className="font-medium text-[10px] text-slate-600 tracking-wide dark:text-zinc-400">
+                      Pág. {pageNum} / {pageNum + 1}
+                    </span>
+                    <div className="h-px flex-1 bg-slate-400/75 dark:bg-zinc-600/85" />
+                  </div>
                 )}
               </div>
             );
