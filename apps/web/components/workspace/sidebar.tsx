@@ -23,6 +23,7 @@ import {
   MonitorIcon,
   MoonIcon,
   MoreHorizontalIcon,
+  PaletteIcon,
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -70,6 +71,7 @@ import { useCloudSyncStore } from "@/lib/supabase/cloud-sync";
 import { cn } from "@/lib/utils";
 import packageJson from "@/package.json";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
+import { AppearanceDialog } from "./appearance-dialog";
 import { CitationImportDialog } from "./citation-import-dialog";
 import { CloudAuthDialog } from "./cloud-auth-dialog";
 import { ProjectManagerDialog } from "./project-manager-dialog";
@@ -136,6 +138,7 @@ export function Sidebar() {
   const [cloudDialogOpen, setCloudDialogOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
+  const [appearanceDialogOpen, setAppearanceDialogOpen] = useState(false);
 
   const cloudConfigured = useCloudSyncStore((s) => s.configured);
   const cloudStatus = useCloudSyncStore((s) => s.status);
@@ -735,9 +738,9 @@ export function Sidebar() {
       )}
 
       {/* Pie de barra lateral */}
-      <div className="flex items-center justify-between border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
-        <span>OpenPrism v{packageJson.version}</span>
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-1 border-sidebar-border border-t px-2.5 py-2 text-muted-foreground text-xs">
+        <span className="min-w-0 truncate">v{packageJson.version}</span>
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button variant="ghost" size="icon" className="size-6" asChild>
             <a
               href="https://github.com/alexhuberth/open-prism"
@@ -747,6 +750,15 @@ export function Sidebar() {
             >
               <GithubIcon className="size-3.5" />
             </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onClick={() => setAppearanceDialogOpen(true)}
+            title="Personalizar colores y fuentes"
+          >
+            <PaletteIcon className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
@@ -850,6 +862,11 @@ export function Sidebar() {
       <CitationImportDialog
         open={citationDialogOpen}
         onOpenChange={setCitationDialogOpen}
+      />
+
+      <AppearanceDialog
+        open={appearanceDialogOpen}
+        onOpenChange={setAppearanceDialogOpen}
       />
     </div>
   );

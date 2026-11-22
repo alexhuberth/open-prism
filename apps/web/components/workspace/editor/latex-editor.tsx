@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { EditorState, Prec } from "@codemirror/state";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -16,8 +16,12 @@ import {
   historyKeymap,
   insertNewlineAndIndent,
 } from "@codemirror/commands";
-import { syntaxHighlighting } from "@codemirror/language";
-import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import {
+  defaultHighlightStyle,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { useTheme } from "next-themes";
 import {
   search,
   highlightSelectionMatches,
@@ -32,8 +36,14 @@ import {
   latexCompletionSource as builtinLatexCompletionSource,
 } from "codemirror-lang-latex";
 import { compileActiveProject } from "@/lib/compile-active-project";
+import {
+  getEditorFontCss,
+  resolveThemePalette,
+  type ResolvedThemePalette,
+} from "@/lib/appearance";
 import { latexCompletionSource } from "@/lib/latex-autocomplete";
 import { isImageFile, isTextFile } from "@/lib/project-files";
+import { useAppearanceStore } from "@/stores/appearance-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { AIDrawer } from "./ai-drawer";
 import { EditorToolbar } from "./editor-toolbar";
@@ -162,9 +172,115 @@ function getActiveFileContent(): string {
   return activeFile?.content ?? "";
 }
 
+function buildDynamicEditorTheme(palette: ResolvedThemePalette) {
+  return [
+    EditorView.theme(
+      {
+        "&": {
+          height: "100%",
+          backgroundColor: palette.editorBg,
+          color: palette.editorText,
+        },
+        ".cm-scroller": {
+          overflow: "auto",
+        },
+        ".cm-gutters": {
+          backgroundColor: palette.editorGutter,
+          color: palette.mutedForeground,
+          borderRight: `1px solid ${palette.border}`,
+          paddingRight: "4px",
+        },
+        ".cm-lineNumbers .cm-gutterElement": {
+          paddingLeft: "8px",
+          paddingRight: "4px",
+        },
+        ".cm-activeLine": {
+          backgroundColor: palette.editorActiveLine,
+        },
+        ".cm-activeLineGutter": {
+          backgroundColor: palette.editorActiveLine,
+          color: palette.editorText,
+        },
+        ".cm-cursor, .cm-dropCursor": {
+          borderLeftColor: palette.editorCaret,
+        },
+        ".cm-content": {
+          caretColor: palette.editorCaret,
+          paddingLeft: "8px",
+          paddingRight: "12px",
+        },
+        ".cm-searchMatch": {
+          backgroundColor: "#facc15 !important",
+          color: "#000 !important",
+          borderRadius: "2px",
+          boxShadow: "0 0 0 1px #eab308",
+        },
+        ".cm-searchMatch-selected": {
+          backgroundColor: "#f97316 !important",
+          color: "#fff !important",
+          borderRadius: "2px",
+          boxShadow: "0 0 0 2px #ea580c",
+        },
+        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+          backgroundColor: `${palette.editorSelection} !important`,
+        },
+      },
+      { dark: palette.isDark },
+    ),
+    syntaxHighlighting(
+      palette.isDark ? oneDarkHighlightStyle : defaultHighlightStyle,
+    ),
+  ];
+}
+
+function buildTypographyTheme(
+  fontFamily: string,
+  fontSize: number,
+  lineHeight: number,
+) {
+  return EditorView.theme({
+    "&": {
+      fontSize: `${fontSize}px`,
+    },
+    ".cm-content, .cm-gutters": {
+      fontFamily,
+      lineHeight: String(lineHeight),
+    },
+  });
+}
+
 export function LatexEditor() {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const themeCompartmentRef = useRef(new Compartment());
+  const typographyCompartmentRef = useRef(new Compartment());
+
+  const { resolvedTheme } = useTheme();
+  const appearancePrefs = useAppearanceStore();
+  const editorPalette = useMemo(
+    () =>
+      resolveThemePalette(
+        resolvedTheme === "dark" ? "dark" : "light",
+        appearancePrefs,
+      ),
+    [resolvedTheme, appearancePrefs],
+  );
+  const editorFontCss = useMemo(
+    () => getEditorFontCss(appearancePrefs.editorFont),
+    [appearancePrefs.editorFont],
+  );
+  const editorPaletteRef = useRef(editorPalette);
+  editorPaletteRef.current = editorPalette;
+  const typographyRef = useRef({
+    fontFamily: editorFontCss,
+    fontSize: appearancePrefs.editorFontSize,
+    lineHeight: appearancePrefs.editorLineHeight,
+  });
+  typographyRef.current = {
+    fontFamily: editorFontCss,
+    fontSize: appearancePrefs.editorFontSize,
+    lineHeight: appearancePrefs.editorLineHeight,
+  };
 
   const files = useDocumentStore((s) => s.files);
   const activeFileId = useDocumentStore((s) => s.activeFileId);
@@ -391,49 +507,22 @@ export function LatexEditor() {
           activateOnTyping: true,
           icons: true,
         }),
-        oneDark,
-        syntaxHighlighting(oneDarkHighlightStyle),
+        themeCompartmentRef.current.of(
+          buildDynamicEditorTheme(editorPaletteRef.current),
+        ),
+        typographyCompartmentRef.current.of(
+          buildTypographyTheme(
+            typographyRef.current.fontFamily,
+            typographyRef.current.fontSize,
+            typographyRef.current.lineHeight,
+          ),
+        ),
         search(),
         highlightSelectionMatches(),
         updateListener,
         scrollListener,
         EditorView.lineWrapping,
         scrollPastEnd(),
-        EditorView.theme({
-          "&": {
-            height: "100%",
-            fontSize: "14px",
-          },
-          ".cm-scroller": {
-            overflow: "auto",
-          },
-          ".cm-gutters": {
-            paddingRight: "4px",
-          },
-          ".cm-lineNumbers .cm-gutterElement": {
-            paddingLeft: "8px",
-            paddingRight: "4px",
-          },
-          ".cm-content": {
-            paddingLeft: "8px",
-            paddingRight: "12px",
-          },
-          ".cm-searchMatch": {
-            backgroundColor: "#facc15 !important",
-            color: "#000 !important",
-            borderRadius: "2px",
-            boxShadow: "0 0 0 1px #eab308",
-          },
-          ".cm-searchMatch-selected": {
-            backgroundColor: "#f97316 !important",
-            color: "#fff !important",
-            borderRadius: "2px",
-            boxShadow: "0 0 0 2px #ea580c",
-          },
-          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-            backgroundColor: "rgba(100, 150, 255, 0.3)",
-          },
-        }),
       ],
     });
 
@@ -454,6 +543,30 @@ export function LatexEditor() {
     setContent,
     setCursorPosition,
     setSelectionRange,
+  ]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        themeCompartmentRef.current.reconfigure(
+          buildDynamicEditorTheme(editorPalette),
+        ),
+        typographyCompartmentRef.current.reconfigure(
+          buildTypographyTheme(
+            editorFontCss,
+            appearancePrefs.editorFontSize,
+            appearancePrefs.editorLineHeight,
+          ),
+        ),
+      ],
+    });
+  }, [
+    editorPalette,
+    editorFontCss,
+    appearancePrefs.editorFontSize,
+    appearancePrefs.editorLineHeight,
   ]);
 
   useEffect(() => {
@@ -538,11 +651,20 @@ export function LatexEditor() {
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {stickyLines.length > 0 && (
-          <div className="absolute inset-x-0 top-0 z-10 border-border border-b bg-[#282c34] font-mono text-[14px] leading-[1.4] shadow-md">
+          <div
+            className="absolute inset-x-0 top-0 z-10 border-border border-b shadow-md"
+            style={{
+              backgroundColor: editorPalette.editorBg,
+              color: editorPalette.editorText,
+              fontFamily: editorFontCss,
+              fontSize: `${appearancePrefs.editorFontSize}px`,
+              lineHeight: appearancePrefs.editorLineHeight,
+            }}
+          >
             {stickyLines.map((section) => (
               <div
                 key={section.line}
-                className="flex cursor-pointer items-center hover:bg-white/5"
+                className="flex cursor-pointer items-center hover:bg-muted/40"
                 onClick={() => {
                   const view = viewRef.current;
                   if (!view) return;
@@ -557,8 +679,12 @@ export function LatexEditor() {
                 }}
               >
                 <span
-                  className="shrink-0 bg-[#282c34] py-px text-right text-[#636d83]"
-                  style={{ width: gutterWidth ? gutterWidth - 8 : 32 }}
+                  className="shrink-0 py-px text-right"
+                  style={{
+                    width: gutterWidth ? gutterWidth - 8 : 32,
+                    backgroundColor: editorPalette.editorGutter,
+                    color: editorPalette.mutedForeground,
+                  }}
                 >
                   {section.line}
                 </span>
@@ -568,7 +694,10 @@ export function LatexEditor() {
                     dangerouslySetInnerHTML={{ __html: section.html }}
                   />
                 ) : (
-                  <span className="py-px pl-5.5 text-[#abb2bf]">
+                  <span
+                    className="py-px pl-5.5"
+                    style={{ color: editorPalette.editorText }}
+                  >
                     {section.content}
                   </span>
                 )}

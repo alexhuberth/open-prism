@@ -14,6 +14,7 @@ Espacio de trabajo de código abierto para escribir documentos en LaTeX con asis
 - **Asistente IA multimodal (Google Gemini)** - Selector de modelos (`Gemini 4 Hydrogen`, `Gemini 3.5 Flash-Lite`, `Gemini 3.1 Flash-Lite`, etc.), contexto estructural optimizado para documentos largos, adjunto de imágenes y herramientas multiarchivo (`read_project_file`, `create_project_file`, `find_and_replace`)
 - **Editor CodeMirror 6 inteligente** - Resaltado LaTeX y autocompletado contextual para `\cite{}`, `\ref{}`, `\includegraphics{}` e `\input{}` usando los archivos del proyecto activo
 - **Compilación rápida con `pdflatex`, `lualatex` y `xelatex`** - Envío binario `multipart/form-data` con caché de imágenes por SHA-256, detección automática de `biber` (`biblatex`), `bibtex` y `makeindex`, y soporte de idioma español (`texlive-lang-spanish`)
+- **Apariencia, paletas Día/Noche y tipografía profesional** - Presets armónicos separados para modo claro (*Papel Editorial*, *Sepia Cálido*, *Pizarra Suave*, *Blanco Puro*) y oscuro (*Obsidiana Azul*, *Bosque Nórdico*, *Grafito Neutro*, *Medianoche OLED*), colores personalizados de fondo/texto y fuentes profesionales (*JetBrains Mono*, *IBM Plex Mono*, *Fira Code*, *Source Serif 4*, *Geist*, *Inter*, *Plus Jakarta Sans*)
 - **Persistencia híbrida (`IndexedDB` + Supabase)** - Guardado local automático en el navegador (con caché de PDF por proyecto) y sincronización opcional en la nube con Supabase Auth, Postgres (RLS) y Storage privado
 
 ## Requisitos previos

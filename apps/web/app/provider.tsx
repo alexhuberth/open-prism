@@ -10,6 +10,7 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { ThemeProvider } from "next-themes";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
+import { AppearanceController } from "@/components/workspace/appearance-controller";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { initCloudSync } from "@/lib/supabase/cloud-sync";
 import { useDocumentStore } from "@/stores/document-store";
@@ -40,6 +41,7 @@ export function RootProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <AppearanceController />
       <AssistantRuntimeProvider runtime={runtime}>
         {children}
         <Toaster />
