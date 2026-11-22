@@ -11,6 +11,22 @@ import { chatRatelimit, getIP } from "@/lib/ratelimit";
 
 export const maxDuration = 30;
 
+const ALLOWED_MODELS = new Set([
+  "gemini-4-hydrogen",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.8-flash",
+  "gemini-4-argon",
+  "gemini-4-carbon",
+]);
+
+const THINKING_LOW_MODELS = new Set([
+  "gemini-4-hydrogen",
+  "gemini-3.8-flash",
+  "gemini-4-argon",
+  "gemini-4-carbon",
+]);
+
 const SYSTEM_PROMPT = `Eres un asistente experto en LaTeX. Ayudas a los usuarios a redactar, corregir y editar documentos en LaTeX.
 Responde siempre en un perfecto español latinoamericano, de forma natural, clara y precisa (evita expresiones propias de España).
 
@@ -20,30 +36,23 @@ Al proporcionar código LaTeX:
 - Sugiere buenas prácticas
 - Usa bloques de código con \`\`\`latex para el código LaTeX
 
-Tienes acceso al documento actual del usuario, el cual se incluye en el contexto.
+Tienes acceso al archivo activo y a la lista de archivos del proyecto en el contexto. Si el usuario adjunta imágenes (como fotos de ecuaciones escritas a mano, pizarras o diagramas), transcríbelas a código LaTeX o TikZ limpio y listo para compilar.
 
-Cuando el usuario te pida ayuda con su documento:
-- Haz referencia a partes específicas de su documento
-- Sugiere mejoras y correcciones
-- Proporciona fragmentos de código completos que pueda utilizar
+Tienes herramientas disponibles para inspeccionar el proyecto y proponer cambios (el usuario revisará el diff antes de aceptarlos y compilar):
+- Usa read_project_file para leer el contenido de otro archivo del proyecto (.tex, .bib, .sty, .cls, etc.) cuando necesites revisarlo
+- Usa insert_latex para proponer insertar código en la posición del cursor del archivo activo
+- Usa replace_selection para proponer reemplazar el texto seleccionado (solo cuando el usuario haya seleccionado texto)
+- Usa find_and_replace para proponer buscar y reemplazar un fragmento exacto en el archivo activo o en otro archivo indicando filePath
+- Usa create_project_file para proponer crear un archivo nuevo en el proyecto (por ejemplo referencias.bib o secciones/capitulo1.tex)
 
-Tienes herramientas disponibles para modificar el documento directamente:
-- Usa insert_latex para insertar código en la posición del cursor del usuario
-- Usa replace_selection para reemplazar el texto seleccionado (solo cuando el usuario haya seleccionado texto)
-- Usa find_and_replace para buscar y reemplazar texto específico en el documento
-
-Cuando el usuario te pida agregar, insertar o escribir código LaTeX en su documento, usa la herramienta insert_latex.
-Cuando el usuario te pida reemplazar o modificar el texto seleccionado, usa la herramienta replace_selection.
-Cuando el usuario te pida cambiar, modificar o reemplazar un texto específico en el documento, usa la herramienta find_and_replace.
+Nunca afirmes que un cambio ya quedó aplicado hasta que la herramienta devuelva el resultado de aprobación del usuario.
 
 Tareas frecuentes en las que ayudas:
-- Redacción de ecuaciones matemáticas
-- Estructura de documentos (secciones, capítulos)
-- Tablas y figuras
+- Redacción de ecuaciones matemáticas y transcripción desde imágenes
+- Estructura de documentos multiproyecto (secciones, capítulos, archivos .bib)
+- Tablas y figuras (TikZ, pgfplots, graphicx)
 - Bibliografía y citas
-- Formato y estilo
-- Recomendación de paquetes
-- Depuración de errores de LaTeX`;
+- Formato, estilo y depuración de errores de LaTeX`;
 
 export async function POST(req: Request) {
   if (chatRatelimit) {
@@ -65,26 +74,46 @@ export async function POST(req: Request) {
     }
   }
 
-  const { messages, system, tools } = await req.json();
+  const { messages, system, tools, config } = await req.json();
+
+  const requestedModel = config?.modelName;
+  const modelName =
+    typeof requestedModel === "string" && ALLOWED_MODELS.has(requestedModel)
+      ? requestedModel
+      : "gemini-4-hydrogen";
 
   const fullSystemPrompt = system
     ? `${SYSTEM_PROMPT}\n\n${system}`
     : SYSTEM_PROMPT;
 
   const result = streamText({
-    model: google("gemini-4-hydrogen"),
+    model: google(modelName),
     system: fullSystemPrompt,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
+    maxRetries: 1,
     tools: frontendTools(tools) as unknown as ToolSet,
-    providerOptions: {
-      google: {
-        thinkingConfig: {
-          thinkingLevel: "low",
-        },
-      } satisfies GoogleLanguageModelOptions,
-    },
+    ...(THINKING_LOW_MODELS.has(modelName) && {
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingLevel: "low",
+          },
+        } satisfies GoogleLanguageModelOptions,
+      },
+    }),
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({
+    onError: (error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("quota") || msg.includes("429")) {
+        return `El modelo ${modelName} alcanzó su límite de cuota en tu API key. Cambia a "Gemini 3.5 Flash-Lite" en el selector de modelo.`;
+      }
+      if (msg.includes("high demand") || msg.includes("503")) {
+        return `El modelo ${modelName} está saturado temporalmente (503). Cambia a "Gemini 3.5 Flash-Lite" en el selector o intenta de nuevo.`;
+      }
+      return `Error del asistente (${modelName}): ${msg}`;
+    },
+  });
 }

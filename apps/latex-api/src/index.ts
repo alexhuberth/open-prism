@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { mkdir, rm, writeFile, readFile, access } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -68,10 +68,13 @@ app.post("/builds/sync", async (c) => {
 
   const mainResource = resources.find((r) => r.main) || resources[0];
   const mainPath = mainResource.path || "main.tex";
-  const mainFileName = mainPath.replace(/\.tex$/, "");
+  const mainDirRel = dirname(mainPath);
+  const mainBaseName = basename(mainPath).replace(/\.tex$/, "");
 
   const workDir = join(tmpdir(), `latex-${randomUUID()}`);
   await mkdir(workDir, { recursive: true });
+  const outDir = mainDirRel === "." ? workDir : join(workDir, mainDirRel);
+  await mkdir(outDir, { recursive: true });
 
   activeCompilations++;
   try {
@@ -108,11 +111,14 @@ app.post("/builds/sync", async (c) => {
 
     const runWithTimeout = (
       cmd: string[],
+      cwd = workDir,
+      extraEnv?: Record<string, string>,
     ): Promise<{ exitCode: number; timedOut: boolean }> => {
       return new Promise((resolve) => {
         const [command, ...args] = cmd;
         const proc = spawn(command, args, {
-          cwd: workDir,
+          cwd,
+          env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });
         let timedOut = false;
@@ -131,7 +137,16 @@ app.post("/builds/sync", async (c) => {
       });
     };
 
-    const latexCmd = [compilerCmd, "-interaction=nonstopmode", mainPath];
+    const latexCmd =
+      mainDirRel === "."
+        ? [compilerCmd, "-interaction=nonstopmode", mainPath]
+        : [
+            compilerCmd,
+            "-interaction=nonstopmode",
+            "-output-directory",
+            outDir,
+            mainPath,
+          ];
 
     if (hasBib) {
       let result = await runWithTimeout(latexCmd);
@@ -142,12 +157,14 @@ app.post("/builds/sync", async (c) => {
         );
       }
 
-      const auxPath = join(workDir, `${mainFileName}.aux`);
+      const auxPath = join(outDir, `${mainBaseName}.aux`);
       const auxExists = await access(auxPath)
         .then(() => true)
         .catch(() => false);
       if (auxExists) {
-        result = await runWithTimeout(["bibtex", mainFileName]);
+        result = await runWithTimeout(["bibtex", mainBaseName], outDir, {
+          BIBINPUTS: `${workDir}:${outDir}:`,
+        });
         if (result.timedOut) {
           return c.json(
             { error: "BibTeX timed out" } satisfies CompileError,
@@ -177,8 +194,8 @@ app.post("/builds/sync", async (c) => {
       }
     }
 
-    const pdfPath = join(workDir, `${mainFileName}.pdf`);
-    const logPath = join(workDir, `${mainFileName}.log`);
+    const pdfPath = join(outDir, `${mainBaseName}.pdf`);
+    const logPath = join(outDir, `${mainBaseName}.log`);
 
     let logContent = "";
     try {
@@ -190,7 +207,7 @@ app.post("/builds/sync", async (c) => {
       return new Response(pdfBuffer, {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename=${mainFileName}.pdf`,
+          "Content-Disposition": `inline; filename=${mainBaseName}.pdf`,
         },
       });
     } catch {

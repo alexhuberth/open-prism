@@ -24,6 +24,14 @@ import type { FC } from "react";
 import remarkGfm from "remark-gfm";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import {
+  AssistantErrorNotice,
+  AttachImageButton,
+  ComposerAttachmentPill,
+  GeminiModelSelector,
+  MessageAttachmentPill,
+  ThreadChatErrorBanner,
+} from "@/components/assistant-ui/chat-controls";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +55,7 @@ export const Thread: FC = () => {
 
         <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex w-full flex-col gap-4 overflow-visible rounded-t-3xl pb-4">
           <ThreadScrollToBottom />
+          <ThreadChatErrorBanner />
           <Composer />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
@@ -84,8 +93,15 @@ const Composer: FC = () => {
   return (
     <ComposerPrimitive.Root className="relative flex w-full flex-col">
       <div className="flex w-full flex-col rounded-2xl border border-input bg-background px-1 pt-2 outline-none transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20">
+        <div className="flex flex-wrap gap-1.5 px-3 pt-1 empty:hidden">
+          <ComposerPrimitive.Attachments
+            components={{
+              Attachment: ComposerAttachmentPill,
+            }}
+          />
+        </div>
         <ComposerPrimitive.Input
-          placeholder="Pregunta sobre LaTeX..."
+          placeholder="Pregunta sobre LaTeX o adjunta una imagen..."
           className="mb-1 max-h-32 min-h-14 w-full resize-none bg-transparent px-4 pt-2 pb-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-0"
           rows={1}
           autoFocus
@@ -99,7 +115,11 @@ const Composer: FC = () => {
 
 const ComposerAction: FC = () => {
   return (
-    <div className="relative mx-2 mb-2 flex items-center justify-end">
+    <div className="relative mx-2 mb-2 flex items-center justify-between">
+      <div className="flex items-center gap-1">
+        <AttachImageButton side="bottom" />
+        <GeminiModelSelector />
+      </div>
       <AuiIf condition={({ thread }) => !thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
@@ -145,6 +165,7 @@ const AssistantMessage: FC = () => {
             Text: MarkdownText,
           }}
         />
+        <AssistantErrorNotice />
       </div>
 
       <div className="mt-1 ml-2 flex">
@@ -217,6 +238,13 @@ const UserMessage: FC = () => {
       className="flex w-full flex-col items-end py-3"
       data-role="user"
     >
+      <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 empty:hidden">
+        <MessagePrimitive.Attachments
+          components={{
+            Attachment: MessageAttachmentPill,
+          }}
+        />
+      </div>
       <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-foreground">
         <MessagePrimitive.Parts />
       </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useAui } from "@assistant-ui/react";
 import {
   FileTextIcon,
   AlertCircleIcon,
@@ -10,8 +11,9 @@ import {
   MinusIcon,
   PlusIcon,
   DownloadIcon,
+  SparklesIcon,
 } from "lucide-react";
-import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
+import { useDocumentStore } from "@/stores/document-store";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -20,7 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { compileLatex, type CompileResource } from "@/lib/latex-compiler";
+import { compileActiveProject } from "@/lib/compile-active-project";
+import type { LatexCompiler } from "@/lib/latex-compiler";
+import { parseLatexLogErrors } from "@/lib/text-diff";
 
 const ZOOM_OPTIONS = [
   { value: "0.5", label: "50%" },
@@ -45,43 +49,30 @@ const PdfViewer = dynamic(
   },
 );
 
-function gatherResources(files: ProjectFile[]): CompileResource[] {
-  return files.map((f) => {
-    if (f.type === "tex") {
-      return {
-        path: f.name,
-        content: f.content ?? "",
-        main: f.name === "document.tex",
-      };
-    }
-    const dataUrl = f.dataUrl ?? "";
-    const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
-    return {
-      path: f.name,
-      content: base64,
-      encoding: "base64",
-    };
-  });
-}
-
 export function PdfPreview() {
+  const aui = useAui();
+  const activeProjectId = useDocumentStore((s) => s.activeProjectId);
+  const compiler = useDocumentStore((s) => s.compiler);
+  const setProjectCompiler = useDocumentStore((s) => s.setProjectCompiler);
   const pdfData = useDocumentStore((s) => s.pdfData);
   const compileError = useDocumentStore((s) => s.compileError);
   const isCompiling = useDocumentStore((s) => s.isCompiling);
   const isSaving = useDocumentStore((s) => s.isSaving);
-  const setPdfData = useDocumentStore((s) => s.setPdfData);
-  const setCompileError = useDocumentStore((s) => s.setCompileError);
-  const setIsCompiling = useDocumentStore((s) => s.setIsCompiling);
   const content = useDocumentStore((s) => s.content);
   const requestJumpToPosition = useDocumentStore(
     (s) => s.requestJumpToPosition,
   );
+  const initialized = useDocumentStore((s) => s.initialized);
 
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [scale, setScale] = useState<number>(1.0);
-  const hasInitialCompile = useRef(false);
-  const initialized = useDocumentStore((s) => s.initialized);
+  const compiledProjectsRef = useRef<Set<string>>(new Set());
+
+  const parsedErrors = useMemo(
+    () => (compileError ? parseLatexLogErrors(compileError) : []),
+    [compileError],
+  );
 
   const handleTextClick = useCallback(
     (text: string) => {
@@ -109,37 +100,25 @@ export function PdfPreview() {
     [content, requestJumpToPosition],
   );
 
+  const runCompile = useCallback(async (overrideCompiler?: LatexCompiler) => {
+    setPdfError(null);
+    await compileActiveProject(overrideCompiler);
+  }, []);
+
   useEffect(() => {
-    if (hasInitialCompile.current) return;
     if (!initialized) return;
+    if (compiledProjectsRef.current.has(activeProjectId)) return;
     if (pdfData || isCompiling || compileError) return;
 
-    hasInitialCompile.current = true;
-
-    const compile = async () => {
-      setIsCompiling(true);
-      try {
-        const currentFiles = useDocumentStore.getState().files;
-        const resources = gatherResources(currentFiles);
-        const data = await compileLatex(resources);
-        setPdfData(data);
-      } catch (error) {
-        setCompileError(
-          error instanceof Error ? error.message : "Error de compilación",
-        );
-      } finally {
-        setIsCompiling(false);
-      }
-    };
-    compile();
+    compiledProjectsRef.current.add(activeProjectId);
+    runCompile();
   }, [
+    activeProjectId,
     initialized,
     pdfData,
     isCompiling,
     compileError,
-    setIsCompiling,
-    setPdfData,
-    setCompileError,
+    runCompile,
   ]);
 
   const zoomIn = () => setScale((s) => Math.min(4, s + 0.1));
@@ -168,35 +147,105 @@ export function PdfPreview() {
     setScale(newScale);
   };
 
-  const handleCompile = async () => {
-    if (isCompiling) return;
-    setIsCompiling(true);
-    setPdfError(null);
-    try {
-      const currentFiles = useDocumentStore.getState().files;
-      const resources = gatherResources(currentFiles);
-      const data = await compileLatex(resources);
-      setPdfData(data);
-    } catch (error) {
-      setCompileError(
-        error instanceof Error ? error.message : "Error de compilación",
-      );
-    } finally {
-      setIsCompiling(false);
+  const handleCompilerChange = (nextCompiler: string) => {
+    const resolved = nextCompiler as LatexCompiler;
+    setProjectCompiler(resolved);
+    runCompile(resolved);
+  };
+
+  const handleJumpToMainLine = (lineNumber: number) => {
+    const state = useDocumentStore.getState();
+    const mainFile =
+      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
+    if (!mainFile) return;
+
+    if (state.activeFileId !== mainFile.id) {
+      state.setActiveFile(mainFile.id);
     }
+
+    const lines = (mainFile.content ?? "").split("\n");
+    let offset = 0;
+    for (let i = 0; i < lineNumber - 1 && i < lines.length; i++) {
+      offset += lines[i].length + 1;
+    }
+
+    setTimeout(() => {
+      useDocumentStore.getState().requestJumpToPosition(offset);
+    }, 30);
+  };
+
+  const handleFixWithAI = () => {
+    if (!compileError) return;
+    const state = useDocumentStore.getState();
+    const mainFile =
+      state.files.find((f) => f.id === state.mainFileId) ?? state.files[0];
+
+    if (mainFile && state.activeFileId !== mainFile.id) {
+      state.setActiveFile(mainFile.id);
+    }
+
+    const prompt = `Ocurrió el siguiente error al compilar con ${state.compiler} (archivo principal: ${mainFile?.name ?? "document.tex"}):\n\n\`\`\`\n${compileError.slice(0, 1500)}\n\`\`\`\n\nPor favor diagnostica el problema y propón el cambio con find_and_replace para corregirlo.`;
+
+    aui.thread().append({
+      role: "user",
+      content: [{ type: "text", text: prompt }],
+    });
   };
 
   const renderContent = () => {
     if (compileError) {
       return (
-        <div className="flex flex-1 flex-col items-center justify-center bg-muted/30 p-8">
-          <AlertCircleIcon className="mb-4 size-12 text-destructive" />
+        <div className="flex flex-1 flex-col items-center justify-center overflow-auto bg-muted/30 p-6">
+          <AlertCircleIcon className="mb-3 size-10 text-destructive" />
           <h2 className="mb-2 font-medium text-destructive text-lg">
             Error de compilación
           </h2>
-          <p className="max-w-md text-center text-muted-foreground text-sm">
+
+          {parsedErrors.length > 0 && (
+            <div className="mb-3 w-full max-w-lg space-y-1.5">
+              {parsedErrors.map((err, idx) => (
+                <div
+                  key={`${idx}-${err.line ?? "x"}`}
+                  className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs"
+                >
+                  <span className="truncate font-mono text-destructive">
+                    {err.message}
+                  </span>
+                  {err.line != null && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 px-2 text-xs"
+                      onClick={() => handleJumpToMainLine(err.line!)}
+                    >
+                      Ir a línea {err.line}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <pre className="mb-4 max-h-56 w-full max-w-lg overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-muted-foreground text-xs">
             {compileError}
-          </p>
+          </pre>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" onClick={handleFixWithAI}>
+              <SparklesIcon className="mr-1.5 size-4" />
+              Corregir con IA
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runCompile()}
+              disabled={isCompiling}
+            >
+              <RefreshCwIcon className="mr-1.5 size-4" />
+              Reintentar
+            </Button>
+          </div>
         </div>
       );
     }
@@ -268,7 +317,7 @@ export function PdfPreview() {
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                onClick={handleCompile}
+                onClick={() => runCompile()}
                 title="Recompilar"
               >
                 <RefreshCwIcon className="size-3.5" />
@@ -282,13 +331,34 @@ export function PdfPreview() {
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                onClick={handleCompile}
+                onClick={() => runCompile()}
                 title="Reintentar compilación"
               >
                 <RefreshCwIcon className="size-3.5" />
               </Button>
             </>
           )}
+          {!isSaving && !isCompiling && !pdfData && !compileError && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              onClick={() => runCompile()}
+              title="Compilar"
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </Button>
+          )}
+
+          <Select value={compiler} onValueChange={handleCompilerChange}>
+            <SelectTrigger size="sm" className="ml-1 h-6! w-auto text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pdflatex">pdflatex</SelectItem>
+              <SelectItem value="lualatex">lualatex</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {pdfData && (

@@ -20,6 +20,7 @@ async function loadImageAsDataUrl(path: string): Promise<string> {
 }
 
 export function useProjectInit() {
+  const activeProjectId = useDocumentStore((s) => s.activeProjectId);
   const files = useDocumentStore((s) => s.files);
   const addFile = useDocumentStore((s) => s.addFile);
   const initialized = useDocumentStore((s) => s.initialized);
@@ -27,6 +28,15 @@ export function useProjectInit() {
 
   useEffect(() => {
     if (initialized) return;
+
+    const referencesShowcaseImage = files.some((f) =>
+      f.content?.includes("hand-write.jpg"),
+    );
+
+    if (!referencesShowcaseImage) {
+      setInitialized();
+      return;
+    }
 
     const existingImage = files.find(
       (f) => f.type === "image" && f.name === DEFAULT_IMAGE_FILE.name,
@@ -37,23 +47,30 @@ export function useProjectInit() {
       return;
     }
 
-    const currentActiveId = useDocumentStore.getState().activeFileId;
-
     loadImageAsDataUrl(DEFAULT_IMAGE_FILE.path)
       .then((dataUrl) => {
+        if (useDocumentStore.getState().activeProjectId !== activeProjectId) {
+          setInitialized();
+          return;
+        }
         if (existingImage) {
-          useDocumentStore.setState((state) => ({
-            files: state.files.map((f) =>
-              f.id === existingImage.id ? { ...f, dataUrl } : f,
-            ),
-          }));
+          useDocumentStore.getState().addFile(
+            {
+              name: DEFAULT_IMAGE_FILE.name,
+              type: "image",
+              dataUrl,
+            },
+            { activate: false },
+          );
         } else {
-          addFile({
-            name: DEFAULT_IMAGE_FILE.name,
-            type: "image",
-            dataUrl,
-          });
-          useDocumentStore.getState().setActiveFile(currentActiveId);
+          addFile(
+            {
+              name: DEFAULT_IMAGE_FILE.name,
+              type: "image",
+              dataUrl,
+            },
+            { activate: false },
+          );
         }
         setInitialized();
       })
@@ -61,5 +78,5 @@ export function useProjectInit() {
         console.error("Failed to load default image:", err);
         setInitialized();
       });
-  }, [files, addFile, initialized, setInitialized]);
+  }, [activeProjectId, files, addFile, initialized, setInitialized]);
 }

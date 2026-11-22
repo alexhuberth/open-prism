@@ -26,13 +26,19 @@ import {
   findNext,
   findPrevious,
 } from "@codemirror/search";
-import { latex } from "codemirror-lang-latex";
-import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
-import { compileLatex, type CompileResource } from "@/lib/latex-compiler";
-import { EditorToolbar } from "./editor-toolbar";
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import {
+  latex,
+  latexCompletionSource as builtinLatexCompletionSource,
+} from "codemirror-lang-latex";
+import { compileActiveProject } from "@/lib/compile-active-project";
+import { latexCompletionSource } from "@/lib/latex-autocomplete";
+import { isImageFile, isTextFile } from "@/lib/project-files";
+import { useDocumentStore } from "@/stores/document-store";
 import { AIDrawer } from "./ai-drawer";
+import { EditorToolbar } from "./editor-toolbar";
 import { ImagePreview } from "./image-preview";
-import { LatexTools } from "./latex-tools";
+import { LatexTools, PendingProposalsBanner } from "./latex-tools";
 import { SearchPanel } from "./search-panel";
 
 interface StickyItem {
@@ -150,25 +156,6 @@ function getStickyLines(
   return stack;
 }
 
-function gatherResources(files: ProjectFile[]): CompileResource[] {
-  return files.map((f) => {
-    if (f.type === "tex") {
-      return {
-        path: f.name,
-        content: f.content ?? "",
-        main: f.name === "document.tex",
-      };
-    }
-    const dataUrl = f.dataUrl ?? "";
-    let base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
-    base64 = base64.replace(/\s/g, "");
-    return {
-      path: f.name,
-      file: base64,
-    };
-  });
-}
-
 function getActiveFileContent(): string {
   const state = useDocumentStore.getState();
   const activeFile = state.files.find((f) => f.id === state.activeFileId);
@@ -186,13 +173,9 @@ export function LatexEditor() {
   const setSelectionRange = useDocumentStore((s) => s.setSelectionRange);
   const jumpToPosition = useDocumentStore((s) => s.jumpToPosition);
   const clearJumpRequest = useDocumentStore((s) => s.clearJumpRequest);
-  const isCompiling = useDocumentStore((s) => s.isCompiling);
-  const setIsCompiling = useDocumentStore((s) => s.setIsCompiling);
-  const setPdfData = useDocumentStore((s) => s.setPdfData);
-  const setCompileError = useDocumentStore((s) => s.setCompileError);
 
   const activeFile = files.find((f) => f.id === activeFileId);
-  const isTexFile = activeFile?.type === "tex";
+  const isEditableText = activeFile ? isTextFile(activeFile) : false;
   const activeFileContent = activeFile?.content;
 
   const [imageScale, setImageScale] = useState(0.5);
@@ -291,25 +274,12 @@ export function LatexEditor() {
     view.focus();
   };
 
-  compileRef.current = async () => {
-    if (isCompiling) return;
-    setIsCompiling(true);
-    try {
-      const currentFiles = useDocumentStore.getState().files;
-      const resources = gatherResources(currentFiles);
-      const data = await compileLatex(resources);
-      setPdfData(data);
-    } catch (error) {
-      setCompileError(
-        error instanceof Error ? error.message : "Error de compilación",
-      );
-    } finally {
-      setIsCompiling(false);
-    }
+  compileRef.current = () => {
+    compileActiveProject();
   };
 
   useEffect(() => {
-    if (!containerRef.current || !isTexFile) return;
+    if (!containerRef.current || !isEditableText) return;
 
     const currentContent = getActiveFileContent();
 
@@ -413,8 +383,14 @@ export function LatexEditor() {
         highlightActiveLine(),
         highlightActiveLineGutter(),
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        latex(),
+        keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+        latex({ enableAutocomplete: false }),
+        autocompletion({
+          override: [latexCompletionSource, builtinLatexCompletionSource(true)],
+          defaultKeymap: true,
+          activateOnTyping: true,
+          icons: true,
+        }),
         oneDark,
         syntaxHighlighting(oneDarkHighlightStyle),
         search(),
@@ -474,7 +450,7 @@ export function LatexEditor() {
     };
   }, [
     activeFileId,
-    isTexFile,
+    isEditableText,
     setContent,
     setCursorPosition,
     setSelectionRange,
@@ -482,7 +458,7 @@ export function LatexEditor() {
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !isTexFile) return;
+    if (!view || !isEditableText) return;
 
     const content = activeFileContent ?? "";
     const currentContent = view.state.doc.toString();
@@ -495,7 +471,7 @@ export function LatexEditor() {
         },
       });
     }
-  }, [activeFileContent, isTexFile]);
+  }, [activeFileContent, isEditableText]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -509,17 +485,32 @@ export function LatexEditor() {
     clearJumpRequest();
   }, [jumpToPosition, clearJumpRequest]);
 
-  if (!isTexFile && activeFile) {
+  if (!isEditableText && activeFile) {
+    if (isImageFile(activeFile)) {
+      return (
+        <div className="flex h-full flex-col bg-background">
+          <EditorToolbar
+            editorView={viewRef}
+            fileType="image"
+            imageScale={imageScale}
+            onImageScaleChange={setImageScale}
+          />
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <ImagePreview file={activeFile} scale={imageScale} />
+            <AIDrawer />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-full flex-col bg-background">
-        <EditorToolbar
-          editorView={viewRef}
-          fileType="image"
-          imageScale={imageScale}
-          onImageScaleChange={setImageScale}
-        />
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          <ImagePreview file={activeFile} scale={imageScale} />
+        <EditorToolbar editorView={viewRef} />
+        <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center bg-muted/30 p-8 text-center">
+          <p className="font-medium text-sm">{activeFile.name}</p>
+          <p className="mt-1 text-muted-foreground text-xs">
+            Archivo binario incluido en la compilación (no editable como texto).
+          </p>
           <AIDrawer />
         </div>
       </div>
@@ -529,6 +520,7 @@ export function LatexEditor() {
   return (
     <div className="flex h-full flex-col bg-background">
       <EditorToolbar editorView={viewRef} />
+      <PendingProposalsBanner />
       {isSearchOpen && (
         <SearchPanel
           searchQuery={searchQuery}

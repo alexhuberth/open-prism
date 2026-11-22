@@ -35,6 +35,14 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import {
+  AssistantErrorNotice,
+  AttachImageButton,
+  ComposerAttachmentPill,
+  GeminiModelSelector,
+  MessageAttachmentPill,
+  ThreadChatErrorBanner,
+} from "@/components/assistant-ui/chat-controls";
 import { cn } from "@/lib/utils";
 import { useDocumentStore } from "@/stores/document-store";
 import { useDocumentContext } from "@/hooks/use-document-context";
@@ -59,6 +67,7 @@ export function AIDrawer() {
     return threadRuntime.subscribe(() => {
       const state = threadRuntime.getState();
       if (state.isRunning) {
+        useDocumentStore.getState().setChatError(null);
         setIsOpen(true);
         const parent = containerRef.current?.parentElement;
         const maxHeight = parent ? parent.clientHeight * 0.5 : 400;
@@ -150,6 +159,7 @@ export function AIDrawer() {
         </div>
 
         <ThreadMessages />
+        <ThreadChatErrorBanner />
         <Composer />
       </ThreadPrimitive.Root>
     </div>
@@ -206,13 +216,24 @@ const Composer: FC = () => {
   return (
     <ComposerPrimitive.Root className="shrink-0 p-3">
       <div className="flex w-full flex-col rounded-2xl border border-input bg-muted/30 transition-colors focus-within:border-ring focus-within:bg-background">
+        <div className="flex flex-wrap gap-1.5 px-3 pt-2 empty:hidden">
+          <ComposerPrimitive.Attachments
+            components={{
+              Attachment: ComposerAttachmentPill,
+            }}
+          />
+        </div>
         <ComposerPrimitive.Input
-          placeholder="Pregunta sobre LaTeX..."
+          placeholder="Pregunta sobre LaTeX o adjunta una imagen..."
           className="max-h-40 min-h-10 w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
           autoFocus
           aria-label="Campo de mensaje"
         />
-        <div className="flex items-center justify-end px-2 pb-2">
+        <div className="flex items-center justify-between px-2 pb-2">
+          <div className="flex items-center gap-1">
+            <AttachImageButton side="top" />
+            <GeminiModelSelector />
+          </div>
           <ComposerAction />
         </div>
       </div>
@@ -268,6 +289,7 @@ const AssistantMessage: FC = () => {
             Text: MarkdownText,
           }}
         />
+        <AssistantErrorNotice />
       </div>
 
       <div className="ml-1 flex">
@@ -349,6 +371,13 @@ const UserMessage: FC = () => {
       className="flex w-full flex-col items-end py-1.5"
       data-role="user"
     >
+      <div className="mb-1 flex flex-wrap justify-end gap-1.5 empty:hidden">
+        <MessagePrimitive.Attachments
+          components={{
+            Attachment: MessageAttachmentPill,
+          }}
+        />
+      </div>
       <div className="max-w-[85%] rounded-xl bg-muted px-3 py-1.5 text-foreground text-sm">
         <MessagePrimitive.Parts />
       </div>

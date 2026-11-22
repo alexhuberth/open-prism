@@ -1,110 +1,69 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { indexedDBStorage } from "@/lib/storage/indexeddb-storage";
+import type { LatexCompiler } from "@/lib/latex-compiler";
+import {
+  detectMainTexFileName,
+  isTextFile,
+  isTexFile,
+  normalizeRelativePath,
+  type ProjectFile,
+} from "@/lib/project-files";
+import {
+  getProjectTemplate,
+  SHOWCASE_TEX_CONTENT,
+  type ProjectTemplateId,
+} from "@/lib/project-templates";
+import {
+  indexedDBStorage,
+  loadProjectPdf,
+  saveProjectPdf,
+} from "@/lib/storage/indexeddb-storage";
+import type { PersistedProject, ProjectSortOrder } from "@/lib/storage/schema";
 
-const DEFAULT_TEX_CONTENT = `\\documentclass[11pt]{article}
-\\usepackage[T1]{fontenc}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{amsmath}
-\\usepackage{graphicx}
-\\usepackage{tikz-cd}
-\\usepackage{multicol}
+export type { ProjectFile } from "@/lib/project-files";
+export type Project = PersistedProject;
+export type GeminiModelId =
+  | "gemini-4-hydrogen"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.8-flash"
+  | "gemini-4-argon"
+  | "gemini-4-carbon";
 
-\\setlength{\\parindent}{0pt}
-\\setlength{\\parskip}{1\\baselineskip}
-
-\\begin{document}
-
-\\section*{¿Qué es Open-Prism?}
-
-\\textbf{Open-Prism} es un editor de \\LaTeX{} impulsado por IA para redactar documentos científicos. Incluye un asistente integrado para ayudarte a escribir y editar texto, desarrollar ideas y dar formato a tus proyectos.
-
-\\section*{Funcionalidades}
-
-\\begin{multicols}{2}
-Open-Prism integra la IA directamente en el editor con acceso a tu proyecto, así que puedes pedirle cosas como:
-
-\`\`Agrega la transformada de Laplace de $t\\cos(at)$ en la introducción.''
-\\[
-  \\mathcal{L}\\left\\{ t \\cos(a t) \\right\\} = \\frac{ s^2 - a^2 }{ (s^2 + a^2)^2 }
-\\]
-
-\`\`Agrega una tabla de 4\\,$\\times$\\,4 en la sección de resultados.''
-\\begin{center}
-\\resizebox{0.5\\linewidth}{!}{%
-\\begin{tabular}{|c|c|c|c|}
-  \\hline
-  1 & 2 & 3 & 4 \\\\
-  \\hline
-  5 & 6 & 7 & 8 \\\\
-  \\hline
-  9 & 10 & 11 & 12 \\\\
-  \\hline
-  13 & 14 & 15 & 16 \\\\
-  \\hline
-\\end{tabular}%
+export interface PendingProposal {
+  toolCallId: string;
+  toolName:
+    | "insert_latex"
+    | "replace_selection"
+    | "find_and_replace"
+    | "create_project_file";
+  fileId: string;
+  fileName: string;
+  beforeContent: string;
+  afterContent: string;
+  onApprove: (andCompile?: boolean) => void;
+  onReject: () => void;
 }
-\\end{center}
 
-\`\`Por favor revisa esta sección, señala errores o vacíos lógicos y sugiere mejoras de claridad.''
-
-\`\`¿Me falta algún corolario o implicación del Teorema 3.1? ¿Todas las cotas son ajustadas o alguna se puede relajar?''
-
-\\columnbreak
-
-\`\`Redacta un resumen ejecutivo basado en el resto del artículo.''
-
-\`\`Agrega referencias a mi artículo y sugiere trabajos relacionados que pueda haber pasado por alto.''
-
-\`\`Convierte este diagrama dibujado a mano en código \\LaTeX{}.''
-\\par\\noindent
-\\begin{minipage}[t]{0.49\\linewidth}
-  \\vspace{0pt}
-  \\centering
-  \\includegraphics[width=\\linewidth]{hand-write.jpg}
-\\end{minipage}\\hfill
-\\begin{minipage}[t]{0.49\\linewidth}
-  \\vspace{0pt}
-  \\centering
-  \\resizebox{\\linewidth}{!}{$
-    \\begin{tikzcd}[row sep=2em, column sep=1.5em, ampersand replacement=\\&]
-      E
-        \\arrow[dr, "e"']
-        \\arrow[drr, "p_2"]
-        \\arrow[ddr, "p_1"']
-      \\& \\& \\\\
-      \\& A \\times B \\arrow[r, "\\pi_2"'] \\arrow[d, "\\pi_1"] \\& B \\arrow[d, "g"] \\\\
-      \\& A \\arrow[r, "f"'] \\& C
-    \\end{tikzcd}
-  $}
-\\end{minipage}
-\\par
-
-\`\`Completa todas las dependencias faltantes en mi proyecto.''
-
-\`\`Genera un resumen de 200 palabras para público general.''
-
-\`\`Crea una presentación en Beamer con cada diapositiva en un archivo separado.''
-\\end{multicols}
-
-\\section*{Primeros pasos}
-
-Presiona \\textbf{Enter} para compilar tu documento. Usa \\textbf{Shift+Enter} para insertar un salto de línea. El panel del asistente de IA en la parte inferior del editor está listo para ayudarte con cualquier duda o tarea en \\LaTeX{}.
-
-\\end{document}
-`;
-
-export interface ProjectFile {
-  id: string;
+interface CreateProjectOptions {
   name: string;
-  type: "tex" | "image";
-  content?: string;
-  dataUrl?: string;
+  templateId?: ProjectTemplateId;
+  files?: Omit<ProjectFile, "id">[];
+  mainFileName?: string;
+  compiler?: LatexCompiler;
 }
 
 interface DocumentState {
+  projects: Project[];
+  activeProjectId: string;
+  projectSort: ProjectSortOrder;
+  aiModel: GeminiModelId;
   files: ProjectFile[];
   activeFileId: string;
+  mainFileId: string;
+  compiler: LatexCompiler;
+  fileName: string;
+  content: string;
   cursorPosition: number;
   selectionRange: { start: number; end: number } | null;
   jumpToPosition: number | null;
@@ -114,10 +73,36 @@ interface DocumentState {
   isCompiling: boolean;
   isSaving: boolean;
   initialized: boolean;
+  chatError: string | null;
+  pendingProposals: Record<string, PendingProposal>;
+
+  setChatError: (error: string | null) => void;
+  registerPendingProposal: (proposal: PendingProposal) => void;
+  unregisterPendingProposal: (toolCallId: string) => void;
+  clearPendingProposals: () => void;
+
+  createProject: (options: CreateProjectOptions) => string;
+  selectProject: (projectId: string) => void;
+  renameProject: (projectId: string, name: string) => void;
+  duplicateProject: (projectId: string) => string | null;
+  deleteProject: (projectId: string) => void;
+  togglePinProject: (projectId: string) => void;
+  setProjectSort: (sort: ProjectSortOrder) => void;
+  setAiModel: (model: GeminiModelId) => void;
+  setProjectCompiler: (compiler: LatexCompiler) => void;
+  setMainFile: (fileId: string) => void;
 
   setActiveFile: (id: string) => void;
-  addFile: (file: Omit<ProjectFile, "id">) => string;
+  addFile: (
+    file: Omit<ProjectFile, "id">,
+    options?: { activate?: boolean },
+  ) => string;
+  importFiles: (
+    files: Omit<ProjectFile, "id">[],
+    suggestedMainName?: string,
+  ) => void;
   deleteFile: (id: string) => void;
+  deleteFolder: (folderPath: string) => void;
   renameFile: (id: string, name: string) => void;
   updateFileContent: (id: string, content: string) => void;
   setCursorPosition: (position: number) => void;
@@ -134,32 +119,86 @@ interface DocumentState {
   findAndReplace: (find: string, replace: string) => boolean;
   setInitialized: () => void;
 
-  get fileName(): string;
-  get content(): string;
   setFileName: (name: string) => void;
   setContent: (content: string) => void;
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 9);
+  return Math.random().toString(36).substring(2, 10);
+}
+
+function createInitialDefaultProject(): Project {
+  const now = Date.now();
+  const mainId = "default-tex";
+  return {
+    id: "default-project",
+    name: "Proyecto de ejemplo",
+    createdAt: now,
+    updatedAt: now,
+    pinned: false,
+    compiler: "pdflatex",
+    mainFileId: mainId,
+    activeFileId: mainId,
+    files: [
+      {
+        id: mainId,
+        name: "document.tex",
+        type: "tex",
+        content: SHOWCASE_TEX_CONTENT,
+      },
+    ],
+  };
 }
 
 function getActiveFile(state: { files: ProjectFile[]; activeFileId: string }) {
   return state.files.find((f) => f.id === state.activeFileId);
 }
 
+function updateActiveProject(
+  state: DocumentState,
+  updater: (project: Project) => Project,
+): Partial<DocumentState> {
+  let updatedActive: Project | null = null;
+  const projects = state.projects.map((p) => {
+    if (p.id !== state.activeProjectId) return p;
+    updatedActive = updater(p);
+    return updatedActive;
+  });
+
+  if (!updatedActive) return {};
+  const active: Project = updatedActive;
+  const activeFile =
+    active.files.find((f) => f.id === active.activeFileId) ?? active.files[0];
+
+  return {
+    projects,
+    files: active.files,
+    activeFileId: active.activeFileId,
+    mainFileId: active.mainFileId,
+    compiler: active.compiler,
+    fileName: activeFile?.name ?? "document.tex",
+    content: activeFile?.content ?? "",
+  };
+}
+
+const initialProject = createInitialDefaultProject();
+const initialActiveFile =
+  initialProject.files.find((f) => f.id === initialProject.activeFileId) ??
+  initialProject.files[0];
+
 export const useDocumentStore = create<DocumentState>()(
   persist(
     (set, get) => ({
-      files: [
-        {
-          id: "default-tex",
-          name: "document.tex",
-          type: "tex",
-          content: DEFAULT_TEX_CONTENT,
-        },
-      ],
-      activeFileId: "default-tex",
+      projects: [initialProject],
+      activeProjectId: initialProject.id,
+      projectSort: "updatedAt",
+      aiModel: "gemini-4-hydrogen",
+      files: initialProject.files,
+      activeFileId: initialProject.activeFileId,
+      mainFileId: initialProject.mainFileId,
+      compiler: initialProject.compiler,
+      fileName: initialActiveFile?.name ?? "document.tex",
+      content: initialActiveFile?.content ?? "",
       cursorPosition: 0,
       selectionRange: null,
       jumpToPosition: null,
@@ -169,9 +208,298 @@ export const useDocumentStore = create<DocumentState>()(
       isCompiling: false,
       isSaving: false,
       initialized: false,
+      chatError: null,
+      pendingProposals: {},
+
+      setChatError: (chatError) => {
+        if (get().chatError !== chatError) {
+          set({ chatError });
+        }
+      },
+
+      registerPendingProposal: (proposal) =>
+        set((state) => {
+          const existing = state.pendingProposals[proposal.toolCallId];
+          if (
+            existing &&
+            existing.fileId === proposal.fileId &&
+            existing.beforeContent === proposal.beforeContent &&
+            existing.afterContent === proposal.afterContent
+          ) {
+            return {};
+          }
+          return {
+            pendingProposals: {
+              ...state.pendingProposals,
+              [proposal.toolCallId]: proposal,
+            },
+          };
+        }),
+
+      unregisterPendingProposal: (toolCallId) =>
+        set((state) => {
+          if (!state.pendingProposals[toolCallId]) return {};
+          const next = { ...state.pendingProposals };
+          delete next[toolCallId];
+          return { pendingProposals: next };
+        }),
+
+      clearPendingProposals: () => set({ pendingProposals: {} }),
+
+      createProject: ({
+        name,
+        templateId = "blank",
+        files: customFiles,
+        mainFileName,
+        compiler,
+      }) => {
+        const template = getProjectTemplate(templateId);
+        const sourceFiles = customFiles ?? template.files;
+        const resolvedCompiler = compiler ?? template.compiler;
+        const projectId = `proj-${generateId()}`;
+        const now = Date.now();
+
+        const createdFiles: ProjectFile[] = sourceFiles.map((f) => ({
+          ...f,
+          id: generateId(),
+        }));
+
+        if (createdFiles.length === 0) {
+          createdFiles.push({
+            id: generateId(),
+            name: "main.tex",
+            type: "tex",
+            content:
+              "\\documentclass[11pt]{article}\n\\usepackage[T1]{fontenc}\n\n\\begin{document}\n\n\\end{document}\n",
+          });
+        }
+
+        const targetMainName =
+          mainFileName ??
+          (customFiles
+            ? detectMainTexFileName(createdFiles)
+            : template.mainFileName);
+
+        const mainFile =
+          createdFiles.find((f) => f.name === targetMainName) ??
+          createdFiles.find((f) => isTexFile(f)) ??
+          createdFiles[0];
+
+        const newProject: Project = {
+          id: projectId,
+          name: name.trim() || "Nuevo proyecto",
+          createdAt: now,
+          updatedAt: now,
+          pinned: false,
+          compiler: resolvedCompiler,
+          mainFileId: mainFile.id,
+          activeFileId: mainFile.id,
+          files: createdFiles,
+        };
+
+        set((state) => ({
+          projects: [newProject, ...state.projects],
+          activeProjectId: newProject.id,
+          files: newProject.files,
+          activeFileId: newProject.activeFileId,
+          mainFileId: newProject.mainFileId,
+          compiler: newProject.compiler,
+          fileName: mainFile.name,
+          content: mainFile.content ?? "",
+          cursorPosition: 0,
+          selectionRange: null,
+          pdfData: null,
+          compileError: null,
+          pendingProposals: {},
+          initialized: templateId === "showcase" ? false : state.initialized,
+        }));
+
+        return projectId;
+      },
+
+      selectProject: (projectId) => {
+        const state = get();
+        if (projectId === state.activeProjectId) return;
+        const target = state.projects.find((p) => p.id === projectId);
+        if (!target) return;
+
+        const targetActiveFile =
+          target.files.find((f) => f.id === target.activeFileId) ??
+          target.files[0];
+
+        set({
+          activeProjectId: target.id,
+          files: target.files,
+          activeFileId: target.activeFileId,
+          mainFileId: target.mainFileId,
+          compiler: target.compiler,
+          fileName: targetActiveFile?.name ?? "document.tex",
+          content: targetActiveFile?.content ?? "",
+          cursorPosition: 0,
+          selectionRange: null,
+          pdfData: null,
+          compileError: null,
+          pendingProposals: {},
+        });
+
+        loadProjectPdf(target.id)
+          .then((cachedPdf) => {
+            if (get().activeProjectId === target.id && cachedPdf) {
+              set({ pdfData: cachedPdf });
+            }
+          })
+          .catch(() => {});
+      },
+
+      renameProject: (projectId, name) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId
+              ? { ...p, name: trimmed, updatedAt: Date.now() }
+              : p,
+          ),
+        }));
+      },
+
+      duplicateProject: (projectId) => {
+        const state = get();
+        const source = state.projects.find((p) => p.id === projectId);
+        if (!source) return null;
+
+        const now = Date.now();
+        const idMap = new Map<string, string>();
+        const clonedFiles: ProjectFile[] = source.files.map((f) => {
+          const newId = generateId();
+          idMap.set(f.id, newId);
+          return { ...f, id: newId };
+        });
+
+        const newMainId =
+          idMap.get(source.mainFileId) ?? clonedFiles[0]?.id ?? "";
+        const newActiveId = idMap.get(source.activeFileId) ?? newMainId;
+
+        const copy: Project = {
+          ...source,
+          id: `proj-${generateId()}`,
+          name: `${source.name} (copia)`,
+          createdAt: now,
+          updatedAt: now,
+          pinned: false,
+          mainFileId: newMainId,
+          activeFileId: newActiveId,
+          files: clonedFiles,
+        };
+
+        const copyActiveFile =
+          copy.files.find((f) => f.id === copy.activeFileId) ?? copy.files[0];
+
+        set((s) => ({
+          projects: [copy, ...s.projects],
+          activeProjectId: copy.id,
+          files: copy.files,
+          activeFileId: copy.activeFileId,
+          mainFileId: copy.mainFileId,
+          compiler: copy.compiler,
+          fileName: copyActiveFile?.name ?? "document.tex",
+          content: copyActiveFile?.content ?? "",
+          cursorPosition: 0,
+          selectionRange: null,
+          pdfData: null,
+          compileError: null,
+        }));
+
+        return copy.id;
+      },
+
+      deleteProject: (projectId) => {
+        const state = get();
+        if (state.projects.length <= 1) return;
+
+        const remaining = state.projects.filter((p) => p.id !== projectId);
+        const deletingActive = state.activeProjectId === projectId;
+        const nextActive = deletingActive
+          ? remaining[0]
+          : (remaining.find((p) => p.id === state.activeProjectId) ??
+            remaining[0]);
+
+        saveProjectPdf(projectId, null).catch(() => {});
+
+        const nextActiveFile =
+          nextActive.files.find((f) => f.id === nextActive.activeFileId) ??
+          nextActive.files[0];
+
+        set({
+          projects: remaining,
+          activeProjectId: nextActive.id,
+          files: nextActive.files,
+          activeFileId: nextActive.activeFileId,
+          mainFileId: nextActive.mainFileId,
+          compiler: nextActive.compiler,
+          fileName: nextActiveFile?.name ?? "document.tex",
+          content: nextActiveFile?.content ?? "",
+          ...(deletingActive
+            ? {
+                cursorPosition: 0,
+                selectionRange: null,
+                pdfData: null,
+                compileError: null,
+              }
+            : {}),
+        });
+
+        if (deletingActive) {
+          loadProjectPdf(nextActive.id)
+            .then((cachedPdf) => {
+              if (get().activeProjectId === nextActive.id && cachedPdf) {
+                set({ pdfData: cachedPdf });
+              }
+            })
+            .catch(() => {});
+        }
+      },
+
+      togglePinProject: (projectId) => {
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === projectId ? { ...p, pinned: !p.pinned } : p,
+          ),
+        }));
+      },
+
+      setProjectSort: (projectSort) => set({ projectSort }),
+
+      setAiModel: (aiModel) => set({ aiModel }),
+
+      setProjectCompiler: (compiler) => {
+        set((state) =>
+          updateActiveProject(state, (p) => ({
+            ...p,
+            compiler,
+            updatedAt: Date.now(),
+          })),
+        );
+      },
+
+      setMainFile: (fileId) => {
+        set((state) => {
+          const target = state.files.find((f) => f.id === fileId);
+          if (!target || !isTexFile(target)) return {};
+          return updateActiveProject(state, (p) => ({
+            ...p,
+            mainFileId: fileId,
+            updatedAt: Date.now(),
+          }));
+        });
+      },
 
       setActiveFile: (id) =>
-        set({ activeFileId: id, cursorPosition: 0, selectionRange: null }),
+        set((state) => ({
+          ...updateActiveProject(state, (p) => ({ ...p, activeFileId: id })),
+          cursorPosition: 0,
+          selectionRange: null,
+        })),
 
       setSelectionRange: (range) => set({ selectionRange: range }),
 
@@ -179,41 +507,196 @@ export const useDocumentStore = create<DocumentState>()(
 
       clearJumpRequest: () => set({ jumpToPosition: null }),
 
-      addFile: (file) => {
+      addFile: (file, options) => {
+        const normalizedName = normalizeRelativePath(file.name) ?? file.name;
         const id = generateId();
-        set((state) => ({
-          files: [...state.files, { ...file, id }],
-          activeFileId: id,
-        }));
+        const activate = options?.activate ?? true;
+
+        set((state) => {
+          const existing = state.files.find((f) => f.name === normalizedName);
+          if (existing) {
+            return updateActiveProject(state, (p) => ({
+              ...p,
+              updatedAt: Date.now(),
+              activeFileId: activate ? existing.id : p.activeFileId,
+              files: p.files.map((f) =>
+                f.id === existing.id
+                  ? { ...file, id: existing.id, name: normalizedName }
+                  : f,
+              ),
+            }));
+          }
+
+          const newFile: ProjectFile = {
+            ...file,
+            id,
+            name: normalizedName,
+          };
+          return updateActiveProject(state, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            activeFileId: activate ? id : p.activeFileId,
+            files: [...p.files, newFile],
+          }));
+        });
+
         return id;
+      },
+
+      importFiles: (incoming, suggestedMainName) => {
+        if (incoming.length === 0) return;
+
+        set((state) =>
+          updateActiveProject(state, (p) => {
+            const nextFiles = [...p.files];
+            let firstTexId: string | null = null;
+            let matchedSuggestedMainId: string | null = null;
+
+            for (const item of incoming) {
+              const normalized = normalizeRelativePath(item.name);
+              if (!normalized) continue;
+
+              const existingIdx = nextFiles.findIndex(
+                (f) => f.name === normalized,
+              );
+              if (existingIdx !== -1) {
+                const updated: ProjectFile = {
+                  ...item,
+                  id: nextFiles[existingIdx].id,
+                  name: normalized,
+                };
+                nextFiles[existingIdx] = updated;
+                if (normalized === suggestedMainName) {
+                  matchedSuggestedMainId = updated.id;
+                }
+                if (!firstTexId && isTexFile(updated)) {
+                  firstTexId = updated.id;
+                }
+              } else {
+                const created: ProjectFile = {
+                  ...item,
+                  id: generateId(),
+                  name: normalized,
+                };
+                nextFiles.push(created);
+                if (normalized === suggestedMainName) {
+                  matchedSuggestedMainId = created.id;
+                }
+                if (!firstTexId && isTexFile(created)) {
+                  firstTexId = created.id;
+                }
+              }
+            }
+
+            const hasExistingMain = nextFiles.some(
+              (f) => f.id === p.mainFileId,
+            );
+            const nextMainFileId =
+              matchedSuggestedMainId ??
+              (hasExistingMain ? p.mainFileId : (firstTexId ?? p.mainFileId));
+
+            return {
+              ...p,
+              updatedAt: Date.now(),
+              files: nextFiles,
+              mainFileId: nextMainFileId,
+              activeFileId:
+                matchedSuggestedMainId ?? firstTexId ?? p.activeFileId,
+            };
+          }),
+        );
       },
 
       deleteFile: (id) => {
         const state = get();
         if (state.files.length <= 1) return;
-        const newFiles = state.files.filter((f) => f.id !== id);
-        const newActiveId =
-          state.activeFileId === id ? newFiles[0].id : state.activeFileId;
-        set({ files: newFiles, activeFileId: newActiveId });
+        set((s) =>
+          updateActiveProject(s, (p) => {
+            const newFiles = p.files.filter((f) => f.id !== id);
+            if (newFiles.length === 0) return p;
+
+            const newActiveId =
+              p.activeFileId === id ? newFiles[0].id : p.activeFileId;
+            const newMainId =
+              p.mainFileId === id
+                ? (newFiles.find((f) => isTexFile(f))?.id ?? newFiles[0].id)
+                : p.mainFileId;
+
+            return {
+              ...p,
+              updatedAt: Date.now(),
+              files: newFiles,
+              activeFileId: newActiveId,
+              mainFileId: newMainId,
+            };
+          }),
+        );
+      },
+
+      deleteFolder: (folderPath) => {
+        const prefix = `${folderPath.replace(/\/+$/, "")}/`;
+        set((state) =>
+          updateActiveProject(state, (p) => {
+            const remaining = p.files.filter((f) => !f.name.startsWith(prefix));
+            if (remaining.length === 0) return p;
+
+            const activeExists = remaining.some((f) => f.id === p.activeFileId);
+            const mainExists = remaining.some((f) => f.id === p.mainFileId);
+
+            return {
+              ...p,
+              updatedAt: Date.now(),
+              files: remaining,
+              activeFileId: activeExists ? p.activeFileId : remaining[0].id,
+              mainFileId: mainExists
+                ? p.mainFileId
+                : (remaining.find((f) => isTexFile(f))?.id ?? remaining[0].id),
+            };
+          }),
+        );
       },
 
       renameFile: (id, name) => {
-        set((state) => ({
-          files: state.files.map((f) => (f.id === id ? { ...f, name } : f)),
-        }));
+        const normalized = normalizeRelativePath(name);
+        if (!normalized) return;
+        set((state) =>
+          updateActiveProject(state, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === id ? { ...f, name: normalized } : f,
+            ),
+          })),
+        );
       },
 
       updateFileContent: (id, content) => {
-        set((state) => ({
-          files: state.files.map((f) => (f.id === id ? { ...f, content } : f)),
-        }));
+        set((state) =>
+          updateActiveProject(state, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) => (f.id === id ? { ...f, content } : f)),
+          })),
+        );
       },
 
       setThreadOpen: (open) => set({ isThreadOpen: open }),
 
-      setPdfData: (data) => set({ pdfData: data, compileError: null }),
+      setPdfData: (data) => {
+        const projectId = get().activeProjectId;
+        set({ pdfData: data, compileError: null });
+        if (projectId) {
+          saveProjectPdf(projectId, data).catch(() => {});
+        }
+      },
 
-      setCompileError: (error) => set({ compileError: error, pdfData: null }),
+      setCompileError: (error) => {
+        const projectId = get().activeProjectId;
+        set({ compileError: error, pdfData: null });
+        if (projectId) {
+          saveProjectPdf(projectId, null).catch(() => {});
+        }
+      },
 
       setIsCompiling: (isCompiling) => set({ isCompiling }),
 
@@ -224,7 +707,7 @@ export const useDocumentStore = create<DocumentState>()(
       insertAtCursor: (text) => {
         const state = get();
         const activeFile = getActiveFile(state);
-        if (!activeFile || activeFile.type !== "tex") return;
+        if (!activeFile || !isTextFile(activeFile)) return;
 
         const content = activeFile.content ?? "";
         const { cursorPosition } = state;
@@ -233,95 +716,138 @@ export const useDocumentStore = create<DocumentState>()(
           text +
           content.slice(cursorPosition);
 
-        set({
-          files: state.files.map((f) =>
-            f.id === activeFile.id ? { ...f, content: newContent } : f,
-          ),
+        set((s) => ({
+          ...updateActiveProject(s, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === activeFile.id ? { ...f, content: newContent } : f,
+            ),
+          })),
           cursorPosition: cursorPosition + text.length,
-        });
+        }));
       },
 
       replaceSelection: (start, end, text) => {
         const state = get();
         const activeFile = getActiveFile(state);
-        if (!activeFile || activeFile.type !== "tex") return;
+        if (!activeFile || !isTextFile(activeFile)) return;
 
         const content = activeFile.content ?? "";
         const newContent = content.slice(0, start) + text + content.slice(end);
 
-        set({
-          files: state.files.map((f) =>
-            f.id === activeFile.id ? { ...f, content: newContent } : f,
-          ),
+        set((s) => ({
+          ...updateActiveProject(s, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === activeFile.id ? { ...f, content: newContent } : f,
+            ),
+          })),
           cursorPosition: start + text.length,
-        });
+        }));
       },
 
       findAndReplace: (find, replace) => {
         const state = get();
         const activeFile = getActiveFile(state);
-        if (!activeFile || activeFile.type !== "tex") return false;
+        if (!activeFile || !isTextFile(activeFile)) return false;
 
         const content = activeFile.content ?? "";
         if (!content.includes(find)) return false;
 
         const newContent = content.replace(find, replace);
-        set({
-          files: state.files.map((f) =>
-            f.id === activeFile.id ? { ...f, content: newContent } : f,
-          ),
-        });
+        set((s) =>
+          updateActiveProject(s, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === activeFile.id ? { ...f, content: newContent } : f,
+            ),
+          })),
+        );
         return true;
       },
 
       setInitialized: () => set({ initialized: true }),
 
-      get fileName() {
-        const activeFile = getActiveFile(get());
-        return activeFile?.name ?? "document.tex";
-      },
-
-      get content() {
-        const activeFile = getActiveFile(get());
-        return activeFile?.content ?? "";
-      },
-
       setFileName: (name) => {
-        const state = get();
-        set({
-          files: state.files.map((f) =>
-            f.id === state.activeFileId ? { ...f, name } : f,
-          ),
-        });
+        const normalized = normalizeRelativePath(name) ?? name;
+        set((state) =>
+          updateActiveProject(state, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === state.activeFileId ? { ...f, name: normalized } : f,
+            ),
+          })),
+        );
       },
 
       setContent: (content) => {
-        const state = get();
-        set({
-          files: state.files.map((f) =>
-            f.id === state.activeFileId ? { ...f, content } : f,
-          ),
-        });
+        set((state) =>
+          updateActiveProject(state, (p) => ({
+            ...p,
+            updatedAt: Date.now(),
+            files: p.files.map((f) =>
+              f.id === state.activeFileId ? { ...f, content } : f,
+            ),
+          })),
+        );
       },
     }),
     {
       name: "open-prism-document",
       storage: createJSONStorage(() => indexedDBStorage),
       partialize: (state) => ({
-        files: state.files,
-        activeFileId: state.activeFileId,
-        pdfData: state.pdfData,
+        projects: state.projects,
+        activeProjectId: state.activeProjectId,
+        projectSort: state.projectSort,
+        aiModel: state.aiModel,
       }),
       merge: (persisted, current) => {
-        const merged = { ...current, ...(persisted as object) };
-        const files = merged.files as ProjectFile[];
-        const docTex = files.find((f) => f.name === "document.tex");
-        if (docTex) {
-          merged.activeFileId = docTex.id;
-        } else if (files.length > 0) {
-          merged.activeFileId = files[0].id;
+        const data = persisted as Partial<DocumentState> | undefined;
+        if (!data?.projects || data.projects.length === 0) {
+          return current;
         }
-        return merged;
+
+        const activeProject =
+          data.projects.find((p) => p.id === data.activeProjectId) ??
+          data.projects[0];
+
+        const docTex = activeProject.files.find(
+          (f) => f.name === "document.tex" || f.name === "main.tex",
+        );
+        const activeFileId = activeProject.files.some(
+          (f) => f.id === activeProject.activeFileId,
+        )
+          ? activeProject.activeFileId
+          : (docTex?.id ?? activeProject.files[0]?.id ?? "");
+
+        const mainFileId = activeProject.files.some(
+          (f) => f.id === activeProject.mainFileId,
+        )
+          ? activeProject.mainFileId
+          : (docTex?.id ?? activeProject.files[0]?.id ?? "");
+
+        const mergedActiveFile =
+          activeProject.files.find((f) => f.id === activeFileId) ??
+          activeProject.files[0];
+
+        return {
+          ...current,
+          projects: data.projects,
+          activeProjectId: activeProject.id,
+          projectSort: data.projectSort ?? "updatedAt",
+          aiModel: data.aiModel ?? "gemini-4-hydrogen",
+          files: activeProject.files,
+          activeFileId,
+          mainFileId,
+          compiler: activeProject.compiler ?? "pdflatex",
+          fileName: mergedActiveFile?.name ?? "document.tex",
+          content: mergedActiveFile?.content ?? "",
+          pdfData: data.pdfData ?? null,
+        };
       },
     },
   ),

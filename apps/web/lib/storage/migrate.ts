@@ -1,4 +1,4 @@
-import type { ProjectFile } from "@/stores/document-store";
+import type { ProjectFile } from "@/lib/project-files";
 
 const LOCALSTORAGE_KEY = "open-prism-document";
 const MIGRATION_FLAG = "open-prism-migrated-to-indexeddb";

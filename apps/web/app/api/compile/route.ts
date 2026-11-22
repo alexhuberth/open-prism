@@ -10,6 +10,8 @@ interface CompileResource {
   main?: boolean;
 }
 
+const ALLOWED_COMPILERS = new Set(["pdflatex", "lualatex", "xelatex"]);
+
 export async function POST(req: Request) {
   if (compileRatelimit) {
     const ip = getIP(req);
@@ -32,9 +34,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { resources } = (await req.json()) as {
+    const { resources, compiler } = (await req.json()) as {
       resources: CompileResource[];
+      compiler?: string;
     };
+
+    const resolvedCompiler =
+      compiler && ALLOWED_COMPILERS.has(compiler) ? compiler : "pdflatex";
 
     if (!resources || resources.length === 0) {
       return NextResponse.json(
@@ -75,7 +81,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        compiler: "pdflatex",
+        compiler: resolvedCompiler,
         resources: apiResources,
       }),
     });
@@ -91,9 +97,10 @@ export async function POST(req: Request) {
           (line: string) =>
             line.includes("Error") ||
             line.includes("!") ||
-            line.includes("Missing"),
+            line.includes("Missing") ||
+            /^l\.\d+\b/.test(line.trim()),
         )
-        .slice(0, 10)
+        .slice(0, 16)
         .join("\n");
       return NextResponse.json(
         {
