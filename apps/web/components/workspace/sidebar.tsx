@@ -28,6 +28,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
+  SettingsIcon,
   StarIcon,
   SunIcon,
   Trash2Icon,
@@ -738,10 +739,12 @@ export function Sidebar() {
       )}
 
       {/* Pie de barra lateral */}
-      <div className="flex items-center justify-between gap-1 border-sidebar-border border-t px-2.5 py-2 text-muted-foreground text-xs">
-        <span className="min-w-0 truncate">v{packageJson.version}</span>
+      <div className="flex items-center justify-between gap-1 border-sidebar-border border-t px-2 py-2 text-muted-foreground text-xs">
+        <span className="min-w-0 truncate text-[11px]">
+          v{packageJson.version}
+        </span>
         <div className="flex shrink-0 items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="size-6" asChild>
+          <Button variant="ghost" size="icon" className="h-6 w-5.5" asChild>
             <a
               href="https://github.com/alexhuberth/open-prism"
               target="_blank"
@@ -754,7 +757,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="size-6"
+            className="h-6 w-5.5"
             onClick={() => setAppearanceDialogOpen(true)}
             title="Personalizar colores y fuentes"
           >
@@ -763,7 +766,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="size-6"
+            className="h-6 w-5.5"
             onClick={() => {
               if (theme === "system") setTheme("light");
               else if (theme === "light") setTheme("dark");
@@ -785,6 +788,48 @@ export function Sidebar() {
               <MoonIcon className="size-3.5" />
             )}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-5.5"
+                title="Configuración y herramientas"
+              >
+                <SettingsIcon className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top">
+              <DropdownMenuItem onClick={() => setAppearanceDialogOpen(true)}>
+                <PaletteIcon className="mr-2 size-4" />
+                Apariencia, colores y fuentes
+              </DropdownMenuItem>
+              {cloudConfigured && (
+                <DropdownMenuItem onClick={() => setCloudDialogOpen(true)}>
+                  <CloudIcon className="mr-2 size-4" />
+                  Cuenta y nube (Supabase)
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onClick={() => {
+                  setProjectDialogMode("list");
+                  setProjectDialogOpen(true);
+                }}
+              >
+                <FolderKanbanIcon className="mr-2 size-4" />
+                Administrar proyectos
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setSearchDialogOpen(true)}>
+                <SearchIcon className="mr-2 size-4" />
+                Buscar en el proyecto
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCitationDialogOpen(true)}>
+                <BookMarkedIcon className="mr-2 size-4" />
+                Importar cita (DOI / arXiv)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
