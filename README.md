@@ -1,78 +1,106 @@
 # Open-Prism
 
-Open-source AI-powered LaTeX writing workspace with live preview.
+Espacio de trabajo de código abierto para escribir documentos en LaTeX con asistencia de IA (Google Gemini) y vista previa de PDF en tiempo real.
 
 ![Open-Prism Screenshot](./assets/OpenPrism.png)
 
-## Features
+## Funcionalidades
 
-- **AI-Assisted Writing** - Powered by assistant-ui for intelligent LaTeX assistance
-- **Live PDF Preview** - Real-time compilation and preview of your documents
-- **CodeMirror Editor** - Syntax highlighting and LaTeX language support
-- **Local Storage** - Documents saved in browser IndexedDB
-- **Dark/Light Theme** - Automatic theme switching support
+- **Asistencia con IA (Google Gemini 4 Hydrogen)** - Integrado con `assistant-ui` y `@ai-sdk/google` para redactar, corregir y editar LaTeX directamente en tu documento
+- **Vista previa de PDF en tiempo real** - Compilación en vivo con `pdflatex` y visualización con `react-pdf`
+- **Editor CodeMirror** - Resaltado de sintaxis y soporte para LaTeX
+- **Almacenamiento local** - Documentos guardados automáticamente en el IndexedDB del navegador
+- **Tema claro/oscuro** - Cambio automático según el sistema o manual desde la barra lateral
 
-## Quick Start
+## Requisitos previos
+
+- **Node.js 26 LTS** (por ejemplo `26.13.x`)
+- **pnpm 10+**
+- **Docker** (recomendado para ejecutar `apps/latex-api` con TeX Live) o **TeX Live** instalado localmente
+
+## Inicio rápido
 
 ```bash
-# Clone the repository
-git clone https://github.com/assistant-ui/open-prism.git
+# 1. Clonar el repositorio
+git clone https://github.com/alexhuberth/open-prism.git
 cd open-prism
 
-# Install dependencies
+# 2. Instalar dependencias
 pnpm install
 
-# Copy environment variables
+# 3. Copiar las variables de entorno
 cp apps/web/.env.example apps/web/.env.local
+```
 
-# Configure your environment variables in apps/web/.env.local
-# - OPENAI_API_KEY: Your OpenAI API key
-# - LATEX_API_URL: URL to the LaTeX compilation service
-# - KV_REST_API_URL: KV REST API URL (for rate limiting)
-# - KV_REST_API_TOKEN: KV REST API token
+Configura tus variables en `apps/web/.env.local`:
 
-# Start development server
+- `GOOGLE_GENERATIVE_AI_API_KEY`: Tu API key de Google AI Studio / Gemini (necesaria para el asistente de IA)
+- `LATEX_API_URL`: URL del servicio de compilación LaTeX (por defecto `http://localhost:3001`)
+- `UPSTASH_REDIS_REST_URL` *(opcional)*: URL de Upstash Redis para control de límite de peticiones
+- `UPSTASH_REDIS_REST_TOKEN` *(opcional)*: Token de Upstash Redis
+
+### Levantar el servicio de compilación LaTeX (Docker)
+
+```bash
+docker build -t open-prism-latex-api apps/latex-api
+docker run -d --restart unless-stopped --name open-prism-latex-api -p 3001:3001 open-prism-latex-api
+```
+
+*(En macOS, si el comando `docker` no aparece en tu `PATH`, puedes usar `/Applications/Docker.app/Contents/Resources/bin/docker`).*
+
+### Iniciar la aplicación web
+
+```bash
 pnpm dev:web
 ```
 
-## Project Structure
+Luego abre `http://localhost:3000` en tu navegador.
+
+## Estructura del proyecto
 
 ```
 open-prism/
 ├── apps/
-│   ├── web/          # Next.js frontend application
-│   └── latex-api/    # LaTeX compilation API (Hono + TeX Live)
-├── packages/         # Shared packages (if any)
-├── biome.json        # Biome linter configuration
-└── turbo.json        # Turborepo configuration
+│   ├── web/          # Aplicación frontend en Next.js 16 (interfaz en español latinoamericano)
+│   └── latex-api/    # API de compilación LaTeX (Hono + TeX Live)
+├── packages/         # Paquetes compartidos (si aplica)
+├── biome.json        # Configuración de linter y formateo con Biome
+└── turbo.json        # Configuración de Turborepo
 ```
 
 ### apps/web
 
-Next.js 16 application with:
-- assistant-ui for AI chat interface
-- CodeMirror for LaTeX editing
-- react-pdf for PDF preview
-- Upstash Redis for rate limiting
+Aplicación Next.js 16 con:
+- `assistant-ui` + `@ai-sdk/google` (`gemini-4-hydrogen`) para el chat de IA
+- CodeMirror para edición en LaTeX
+- `react-pdf` para la vista previa de PDF
+- Upstash Redis (opcional) para límite de peticiones
 
 ### apps/latex-api
 
-Hono-based API for LaTeX compilation:
-- Accepts LaTeX source code
-- Compiles using TeX Live (pdflatex)
-- Returns compiled PDF
+API basada en Hono para compilar LaTeX:
+- Recibe el código fuente y archivos adjuntos (`.tex`, imágenes, `.bib`)
+- Compila usando TeX Live (`pdflatex` / `xelatex` / `lualatex` y `bibtex`)
+- Devuelve el PDF compilado
 
-## Deployment
+Para desarrollo local sin Docker (requiere TeX Live instalado en tu sistema):
+
+```bash
+cd apps/latex-api
+pnpm dev
+```
+
+## Despliegue
 
 ### Web App (Vercel)
 
-1. Import the repository to Vercel
-2. Set root directory to `apps/web`
-3. Configure environment variables:
-   - `OPENAI_API_KEY`
+1. Importa el repositorio en Vercel
+2. Define el directorio raíz en `apps/web`
+3. Configura las variables de entorno:
+   - `GOOGLE_GENERATIVE_AI_API_KEY`
    - `LATEX_API_URL`
-   - `KV_REST_API_URL`
-   - `KV_REST_API_TOKEN`
+   - `UPSTASH_REDIS_REST_URL` *(opcional)*
+   - `UPSTASH_REDIS_REST_TOKEN` *(opcional)*
 
 ### LaTeX API (Docker)
 
@@ -82,10 +110,10 @@ docker build -t open-prism-latex-api .
 docker run -p 3001:3001 open-prism-latex-api
 ```
 
-## Contributing
+## Contribuir
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and contribution guidelines.
+Consulta [CONTRIBUTING.md](./CONTRIBUTING.md) para ver la guía de desarrollo y contribución.
 
-## License
+## Licencia
 
 [MIT](./LICENSE)
