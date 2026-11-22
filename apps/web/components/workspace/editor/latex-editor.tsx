@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { toast } from "sonner";
 import {
   EditorView,
   keymap,
@@ -49,6 +50,7 @@ import { AIDrawer } from "./ai-drawer";
 import { EditorToolbar } from "./editor-toolbar";
 import { ImagePreview } from "./image-preview";
 import { LatexTools, PendingProposalsBanner } from "./latex-tools";
+import { MathPreviewPopover } from "./math-preview-popover";
 import { SearchPanel } from "./search-panel";
 
 interface StickyItem {
@@ -285,6 +287,7 @@ export function LatexEditor() {
   const files = useDocumentStore((s) => s.files);
   const activeFileId = useDocumentStore((s) => s.activeFileId);
   const setContent = useDocumentStore((s) => s.setContent);
+  const cursorPosition = useDocumentStore((s) => s.cursorPosition);
   const setCursorPosition = useDocumentStore((s) => s.setCursorPosition);
   const setSelectionRange = useDocumentStore((s) => s.setSelectionRange);
   const jumpToPosition = useDocumentStore((s) => s.jumpToPosition);
@@ -394,7 +397,83 @@ export function LatexEditor() {
     compileActiveProject();
   };
 
+  const handleForwardSync = useCallback(async () => {
+    const view = viewRef.current;
+    const state = useDocumentStore.getState();
+    const currentFile = state.files.find((f) => f.id === state.activeFileId);
+    if (!view || !currentFile || !isTextFile(currentFile)) return;
+
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    let buildId = state.compileBuildId;
+
+    if (!buildId) {
+      const ok = await compileActiveProject();
+      if (!ok) return;
+      buildId = useDocumentStore.getState().compileBuildId;
+      if (!buildId) {
+        toast.info(
+          "No se pudieron generar datos SyncTeX para esta compilación.",
+        );
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/compile/synctex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buildId,
+          direction: "forward",
+          file: currentFile.name,
+          line,
+        }),
+      });
+      const data = (await res.json()) as {
+        page?: number;
+        xPt?: number;
+        yPt?: number;
+        widthPt?: number;
+        heightPt?: number;
+        error?: string;
+      };
+      if (!res.ok || !data.page) {
+        toast.info(
+          data.error || "No se encontró esa línea en el PDF compilado.",
+        );
+        return;
+      }
+
+      useDocumentStore.getState().requestPdfSyncTarget({
+        page: data.page,
+        xPt: data.xPt ?? 72,
+        yPt: data.yPt ?? 72,
+        widthPt: data.widthPt ?? 120,
+        heightPt: data.heightPt ?? 14,
+      });
+    } catch {
+      toast.error("Error al consultar SyncTeX hacia el PDF.");
+    }
+  }, []);
+
   useEffect(() => {
+    const handleForwardShortcut = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "l"
+      ) {
+        e.preventDefault();
+        void handleForwardSync();
+      }
+    };
+    window.addEventListener("keydown", handleForwardShortcut);
+    return () => window.removeEventListener("keydown", handleForwardShortcut);
+  }, [handleForwardSync]);
+
+  useEffect(() => {
+    setCurrentLine(1);
+    setLineHtmlCache({});
     if (!containerRef.current || !isEditableText) return;
 
     const currentContent = getActiveFileContent();
@@ -632,7 +711,12 @@ export function LatexEditor() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <EditorToolbar editorView={viewRef} />
+      <EditorToolbar
+        editorView={viewRef}
+        onForwardSync={() => {
+          void handleForwardSync();
+        }}
+      />
       <PendingProposalsBanner />
       {isSearchOpen && (
         <SearchPanel
@@ -706,6 +790,11 @@ export function LatexEditor() {
           </div>
         )}
         <div ref={containerRef} className="absolute inset-0" />
+        <MathPreviewPopover
+          content={activeFileContent ?? ""}
+          cursorPosition={cursorPosition}
+          visible={isEditableText}
+        />
         <AIDrawer />
       </div>
       <LatexTools />

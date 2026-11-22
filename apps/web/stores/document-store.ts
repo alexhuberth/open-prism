@@ -74,6 +74,14 @@ interface DocumentState {
   compileWarnings: string[];
   compileWarningCount: number;
   compileFullLog: string | null;
+  pdfSyncTarget: {
+    page: number;
+    xPt: number;
+    yPt: number;
+    widthPt: number;
+    heightPt: number;
+    nonce: number;
+  } | null;
   isCompiling: boolean;
   isSaving: boolean;
   hydrated: boolean;
@@ -116,6 +124,14 @@ interface DocumentState {
   setSelectionRange: (range: { start: number; end: number } | null) => void;
   requestJumpToPosition: (position: number) => void;
   clearJumpRequest: () => void;
+  requestPdfSyncTarget: (target: {
+    page: number;
+    xPt: number;
+    yPt: number;
+    widthPt: number;
+    heightPt: number;
+  }) => void;
+  clearPdfSyncTarget: () => void;
   setThreadOpen: (open: boolean) => void;
   setPdfData: (data: Uint8Array | null) => void;
   setCompileError: (error: string | null) => void;
@@ -236,6 +252,7 @@ export const useDocumentStore = create<DocumentState>()(
       compileWarnings: [],
       compileWarningCount: 0,
       compileFullLog: null,
+      pdfSyncTarget: null,
       isCompiling: false,
       isSaving: false,
       hydrated: false,
@@ -739,6 +756,16 @@ export const useDocumentStore = create<DocumentState>()(
           compileWarningCount: meta.warningCount,
           compileFullLog: meta.fullLog,
         }),
+
+      requestPdfSyncTarget: (target) =>
+        set((state) => ({
+          pdfSyncTarget: {
+            ...target,
+            nonce: (state.pdfSyncTarget?.nonce ?? 0) + 1,
+          },
+        })),
+
+      clearPdfSyncTarget: () => set({ pdfSyncTarget: null }),
 
       setIsCompiling: (isCompiling) => set({ isCompiling }),
 

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useAui } from "@assistant-ui/react";
+import { toast } from "sonner";
 import {
   FileTextIcon,
   AlertCircleIcon,
@@ -62,9 +63,10 @@ export function PdfPreview() {
   const compileBuildId = useDocumentStore((s) => s.compileBuildId);
   const compileWarningCount = useDocumentStore((s) => s.compileWarningCount);
   const compileFullLog = useDocumentStore((s) => s.compileFullLog);
+  const pdfSyncTarget = useDocumentStore((s) => s.pdfSyncTarget);
+  const clearPdfSyncTarget = useDocumentStore((s) => s.clearPdfSyncTarget);
   const isCompiling = useDocumentStore((s) => s.isCompiling);
   const isSaving = useDocumentStore((s) => s.isSaving);
-  const content = useDocumentStore((s) => s.content);
   const requestJumpToPosition = useDocumentStore(
     (s) => s.requestJumpToPosition,
   );
@@ -88,30 +90,87 @@ export function PdfPreview() {
     [compileError],
   );
 
-  const handleTextClick = useCallback(
-    (text: string) => {
-      let index = content.indexOf(text);
+  useEffect(() => {
+    if (!pdfSyncTarget) return;
+    const timer = setTimeout(() => {
+      clearPdfSyncTarget();
+    }, 2600);
+    return () => clearTimeout(timer);
+  }, [pdfSyncTarget, clearPdfSyncTarget]);
 
-      if (index === -1) {
-        const cleanText = text.replace(/[{}\\$]/g, "");
-        if (cleanText.length > 2) {
-          index = content.indexOf(cleanText);
-        }
+  const handlePageDoubleClick = useCallback(
+    async ({ page, xPt, yPt }: { page: number; xPt: number; yPt: number }) => {
+      const state = useDocumentStore.getState();
+      const buildId = state.compileBuildId;
+
+      if (!buildId) {
+        toast.info(
+          "Recompila el documento una vez para activar el salto exacto SyncTeX.",
+        );
+        return;
       }
 
-      if (index === -1 && text.length > 5) {
-        const words = text.split(/\s+/).filter((w) => w.length > 3);
-        for (const word of words) {
-          index = content.indexOf(word);
-          if (index !== -1) break;
+      try {
+        const res = await fetch("/api/compile/synctex", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            buildId,
+            direction: "inverse",
+            page,
+            xPt,
+            yPt,
+          }),
+        });
+        const data = (await res.json()) as {
+          file?: string;
+          line?: number;
+          error?: string;
+        };
+        if (!res.ok || !data.file || !data.line) {
+          toast.error(data.error || "No se pudo ubicar la línea en el código.");
+          return;
         }
-      }
 
-      if (index !== -1) {
-        requestJumpToPosition(index);
+        const latest = useDocumentStore.getState();
+        const normalizedTarget = data.file
+          .replaceAll("\\", "/")
+          .replace(/^\.\//, "");
+        const targetFile =
+          latest.files.find((f) => f.name === normalizedTarget) ??
+          latest.files.find(
+            (f) =>
+              f.name.endsWith(`/${normalizedTarget}`) ||
+              normalizedTarget.endsWith(`/${f.name}`),
+          );
+
+        if (!targetFile) {
+          toast.error(`No se encontró el archivo ${normalizedTarget}`);
+          return;
+        }
+
+        if (latest.activeFileId !== targetFile.id) {
+          latest.setActiveFile(targetFile.id);
+        }
+
+        const lines = (targetFile.content ?? "").split("\n");
+        let offset = 0;
+        for (let i = 0; i < data.line - 1 && i < lines.length; i++) {
+          offset += lines[i].length + 1;
+        }
+
+        setTimeout(() => {
+          requestJumpToPosition(offset);
+        }, 35);
+
+        toast.success(`${targetFile.name} : línea ${data.line}`, {
+          duration: 1600,
+        });
+      } catch {
+        toast.error("Error al consultar SyncTeX.");
       }
     },
-    [content, requestJumpToPosition],
+    [requestJumpToPosition],
   );
 
   const runCompile = useCallback(async (overrideCompiler?: LatexCompiler) => {
@@ -328,11 +387,12 @@ export function PdfPreview() {
         data={pdfData}
         scale={scale}
         jumpToPage={jumpToPage}
+        syncHighlight={pdfSyncTarget}
         onError={setPdfError}
         onLoadSuccess={handleLoadSuccess}
         onCurrentPageChange={handleCurrentPageChange}
         onScaleChange={handleScaleChange}
-        onTextClick={handleTextClick}
+        onPageDoubleClick={handlePageDoubleClick}
       />
     );
   };

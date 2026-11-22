@@ -12,6 +12,7 @@ import {
   FunctionSquareIcon,
   FileTextIcon,
   ImageIcon,
+  LocateFixedIcon,
   MinusIcon,
   PlusIcon,
 } from "lucide-react";
@@ -42,6 +43,7 @@ interface EditorToolbarProps {
   fileType?: "tex" | "image";
   imageScale?: number;
   onImageScaleChange?: (scale: number) => void;
+  onForwardSync?: () => void;
 }
 
 export function EditorToolbar({
@@ -49,6 +51,7 @@ export function EditorToolbar({
   fileType = "tex",
   imageScale = 1,
   onImageScaleChange,
+  onForwardSync,
 }: EditorToolbarProps) {
   const fileName = useDocumentStore((s) => {
     const activeFile = s.files.find((f) => f.id === s.activeFileId);
@@ -188,6 +191,17 @@ export function EditorToolbar({
       >
         <span className="font-mono text-xs">∫</span>
       </TooltipIconButton>
+      {onForwardSync && (
+        <>
+          <div className="mx-2 h-4 w-px bg-border" />
+          <TooltipIconButton
+            tooltip="Ir al PDF desde esta línea (Ctrl/Cmd+Shift+L)"
+            onClick={onForwardSync}
+          >
+            <LocateFixedIcon className="size-4" />
+          </TooltipIconButton>
+        </>
+      )}
     </div>
   );
 }

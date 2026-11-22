@@ -16,6 +16,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import {
+  forwardLookupSyncTex,
+  inverseLookupSyncTex,
+  parseSyncTexGz,
+  type SyncTexIndex,
+} from "./synctex.js";
 
 const app = new Hono();
 
@@ -30,6 +36,7 @@ const MAX_LOG_HISTORY = 30;
 
 let activeCompilations = 0;
 const recentBuildLogs = new Map<string, string>();
+const recentBuildSynctex = new Map<string, SyncTexIndex>();
 
 function storeBuildLog(buildId: string, logContent: string) {
   if (!logContent) return;
@@ -37,6 +44,14 @@ function storeBuildLog(buildId: string, logContent: string) {
   if (recentBuildLogs.size > MAX_LOG_HISTORY) {
     const oldestKey = recentBuildLogs.keys().next().value;
     if (oldestKey) recentBuildLogs.delete(oldestKey);
+  }
+}
+
+function storeBuildSynctex(buildId: string, index: SyncTexIndex) {
+  recentBuildSynctex.set(buildId, index);
+  if (recentBuildSynctex.size > MAX_LOG_HISTORY) {
+    const oldestKey = recentBuildSynctex.keys().next().value;
+    if (oldestKey) recentBuildSynctex.delete(oldestKey);
   }
 }
 
@@ -173,6 +188,63 @@ app.get("/builds/:id/log", (c) => {
     );
   }
   return c.json({ buildId: id, log });
+});
+
+app.post("/builds/:id/synctex", async (c) => {
+  const id = c.req.param("id");
+  const index = recentBuildSynctex.get(id);
+  if (!index) {
+    return c.json(
+      {
+        error:
+          "Datos SyncTeX no disponibles para esta compilación (recompila el documento).",
+      },
+      404,
+    );
+  }
+
+  const body = (await c.req.json()) as {
+    direction: "inverse" | "forward";
+    page?: number;
+    xPt?: number;
+    yPt?: number;
+    file?: string;
+    line?: number;
+  };
+
+  if (body.direction === "inverse") {
+    if (
+      !body.page ||
+      typeof body.xPt !== "number" ||
+      typeof body.yPt !== "number"
+    ) {
+      return c.json({ error: "Coordenadas SyncTeX inválidas" }, 400);
+    }
+    const result = inverseLookupSyncTex(index, body.page, body.xPt, body.yPt);
+    if (!result) {
+      return c.json(
+        { error: "No se encontró correspondencia en el código fuente" },
+        404,
+      );
+    }
+    return c.json(result);
+  }
+
+  if (body.direction === "forward") {
+    if (!body.file || !body.line) {
+      return c.json({ error: "Archivo o línea inválidos para SyncTeX" }, 400);
+    }
+    const result = forwardLookupSyncTex(index, body.file, body.line);
+    if (!result) {
+      return c.json(
+        { error: "No se encontró esa línea en el PDF compilado" },
+        404,
+      );
+    }
+    return c.json(result);
+  }
+
+  return c.json({ error: "Dirección SyncTeX no válida" }, 400);
 });
 
 app.post("/builds/sync", async (c) => {
@@ -357,9 +429,10 @@ app.post("/builds/sync", async (c) => {
 
     const latexCmd =
       mainDirRel === "."
-        ? [compilerCmd, "-interaction=nonstopmode", mainPath]
+        ? [compilerCmd, "-synctex=1", "-interaction=nonstopmode", mainPath]
         : [
             compilerCmd,
+            "-synctex=1",
             "-interaction=nonstopmode",
             "-output-directory",
             outDir,
@@ -466,9 +539,18 @@ app.post("/builds/sync", async (c) => {
     }
 
     const pdfPath = join(outDir, `${mainBaseName}.pdf`);
+    const synctexGzPath = join(outDir, `${mainBaseName}.synctex.gz`);
     if (logContent) {
       storeBuildLog(buildId, logContent);
     }
+
+    try {
+      const gzBuffer = await readFile(synctexGzPath);
+      const syncIndex = parseSyncTexGz(gzBuffer, workDir);
+      if (syncIndex) {
+        storeBuildSynctex(buildId, syncIndex);
+      }
+    } catch {}
 
     const warnings = extractLatexWarnings(logContent);
     const headerWarnings = warnings.slice(0, 20);

@@ -11,26 +11,37 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 const PAGE_GAP_PX = 16;
 const OVERSCAN_PAGES = 2;
 
+export interface PdfSyncHighlight {
+  page: number;
+  xPt: number;
+  yPt: number;
+  widthPt: number;
+  heightPt: number;
+  nonce: number;
+}
+
 interface PdfViewerProps {
   data: Uint8Array;
   scale: number;
   jumpToPage?: { page: number; nonce: number } | null;
+  syncHighlight?: PdfSyncHighlight | null;
   onError?: (error: string) => void;
   onLoadSuccess?: (numPages: number) => void;
   onCurrentPageChange?: (page: number) => void;
   onScaleChange?: (scale: number) => void;
-  onTextClick?: (text: string) => void;
+  onPageDoubleClick?: (hit: { page: number; xPt: number; yPt: number }) => void;
 }
 
 export function PdfViewer({
   data,
   scale,
   jumpToPage,
+  syncHighlight,
   onError,
   onLoadSuccess,
   onCurrentPageChange,
   onScaleChange,
-  onTextClick,
+  onPageDoubleClick,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hasSetInitialScale = useRef(false);
@@ -101,6 +112,20 @@ export function PdfViewer({
     onCurrentPageChange?.(clampedPage);
   }, [jumpToPage, numPages, slotPitch, onCurrentPageChange]);
 
+  useEffect(() => {
+    if (!syncHighlight || !containerRef.current || numPages === 0) return;
+    const clampedPage = Math.min(numPages, Math.max(1, syncHighlight.page));
+    const container = containerRef.current;
+    const pageTop = (clampedPage - 1) * slotPitch;
+    const targetTop = Math.max(
+      0,
+      pageTop + syncHighlight.yPt * scale - container.clientHeight * 0.35,
+    );
+    container.scrollTo({ top: targetTop, behavior: "smooth" });
+    lastReportedPage.current = clampedPage;
+    onCurrentPageChange?.(clampedPage);
+  }, [syncHighlight, numPages, slotPitch, scale, onCurrentPageChange]);
+
   const handleLoadSuccess = useCallback(
     ({ numPages: pages }: { numPages: number }) => {
       setNumPages(pages);
@@ -146,24 +171,6 @@ export function PdfViewer({
     [onError],
   );
 
-  const handleTextLayerClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (!onTextClick) return;
-
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "SPAN" &&
-        target.closest(".react-pdf__Page__textContent")
-      ) {
-        const text = target.textContent?.trim();
-        if (text && text.length > 2) {
-          onTextClick(text);
-        }
-      }
-    },
-    [onTextClick],
-  );
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !onScaleChange) return;
@@ -186,10 +193,7 @@ export function PdfViewer({
       onScroll={updateVisibleRange}
       className="flex-1 overflow-auto"
     >
-      <div
-        className="flex flex-col items-center gap-4 p-4"
-        onClick={handleTextLayerClick}
-      >
+      <div className="flex flex-col items-center gap-4 p-4">
         <Document
           file={file}
           onLoadSuccess={handleLoadSuccess}
@@ -205,13 +209,22 @@ export function PdfViewer({
             const pageNum = i + 1;
             const shouldRender =
               pageNum >= visibleRange.start && pageNum <= visibleRange.end;
+            const hasHighlight = syncHighlight?.page === pageNum;
 
             return (
               <div
                 key={pageNum}
                 data-page-number={pageNum}
                 style={{ width: scaledWidth, height: scaledHeight }}
-                className="flex shrink-0 items-center justify-center overflow-hidden bg-white shadow-md"
+                onDoubleClick={(e) => {
+                  if (!onPageDoubleClick) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const xPt = (e.clientX - rect.left) / scale;
+                  const yPt = (e.clientY - rect.top) / scale;
+                  onPageDoubleClick({ page: pageNum, xPt, yPt });
+                }}
+                title="Doble clic para saltar a esta línea en el código (SyncTeX)"
+                className="relative flex shrink-0 items-center justify-center overflow-hidden bg-white shadow-md"
               >
                 {shouldRender ? (
                   <Page
@@ -230,6 +243,18 @@ export function PdfViewer({
                   <span className="text-muted-foreground text-xs">
                     Página {pageNum}
                   </span>
+                )}
+                {hasHighlight && syncHighlight && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute animate-pulse rounded border border-amber-500/80 bg-amber-400/25 shadow-sm"
+                    style={{
+                      left: Math.max(0, syncHighlight.xPt * scale - 4),
+                      top: Math.max(0, syncHighlight.yPt * scale - 2),
+                      width: Math.max(36, syncHighlight.widthPt * scale + 8),
+                      height: Math.max(16, syncHighlight.heightPt * scale + 6),
+                    }}
+                  />
                 )}
               </div>
             );

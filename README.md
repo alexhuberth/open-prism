@@ -12,7 +12,8 @@ Espacio de trabajo de código abierto para escribir documentos en LaTeX con asis
 - **Revisión de cambios (Diff) antes de compilar** - Visualiza línea por línea las propuestas de edición de la IA con opciones de **Rechazar**, **Aceptar** o **Aceptar y compilar**
 - **Diagnóstico, advertencias y log completo** - Visor de advertencias navegables (`Ir a línea X`) y salida `.log` completa, además de **Corregir con IA** ante errores fatales
 - **Asistente IA multimodal (Google Gemini)** - Selector de modelos (`Gemini 4 Hydrogen`, `Gemini 3.5 Flash-Lite`, `Gemini 3.1 Flash-Lite`, etc.), contexto estructural optimizado para documentos largos, adjunto de imágenes y herramientas multiarchivo (`read_project_file`, `create_project_file`, `find_and_replace`)
-- **Editor CodeMirror 6 inteligente** - Resaltado LaTeX y autocompletado contextual para `\cite{}`, `\ref{}`, `\includegraphics{}` e `\input{}` usando los archivos del proyecto activo
+- **Editor CodeMirror 6 inteligente** - Resaltado LaTeX, autocompletado contextual (`\cite{}`, `\ref{}`, `\includegraphics{}`, `\input{}`) y vista previa flotante de ecuaciones en vivo con KaTeX
+- **Navegación bidireccional SyncTeX (`Código ↔ PDF`)** - Doble clic en cualquier parte del PDF salta al archivo `.tex` y línea exacta (incluso entre capítulos modulares), y `Ctrl/Cmd+Shift+L` o el botón **Ir al PDF** resaltan esa línea directo en la página compilada
 - **Compilación rápida con `pdflatex`, `lualatex` y `xelatex`** - Envío binario `multipart/form-data` con caché de imágenes por SHA-256, detección automática de `biber` (`biblatex`), `bibtex` y `makeindex`, y soporte de idioma español (`texlive-lang-spanish`)
 - **Apariencia, paletas Día/Noche y tipografía profesional** - Presets armónicos separados para modo claro (*Papel Editorial*, *Sepia Cálido*, *Pizarra Suave*, *Blanco Puro*) y oscuro (*Obsidiana Azul*, *Bosque Nórdico*, *Grafito Neutro*, *Medianoche OLED*), colores personalizados de fondo/texto y fuentes profesionales (*JetBrains Mono*, *IBM Plex Mono*, *Fira Code*, *Source Serif 4*, *Geist*, *Inter*, *Plus Jakarta Sans*)
 - **Persistencia híbrida (`IndexedDB` + Supabase)** - Guardado local automático en el navegador (con caché de PDF por proyecto) y sincronización opcional en la nube con Supabase Auth, Postgres (RLS) y Storage privado
@@ -102,7 +103,7 @@ Aplicación Next.js 16 con:
 API basada en Hono para compilar LaTeX:
 - Recibe el código fuente y archivos adjuntos (binario directo `multipart/form-data` con caché por hash SHA-256 o JSON) hasta **100 MB** por defecto (ajustable con `MAX_BODY_SIZE_BYTES`)
 - Soporta archivos principales anidados en subcarpetas, `biber` (`biblatex`), `bibtex` y `makeindex` con pasadas automáticas (tiempo máximo por ejecución de `180 s`)
-- Compila usando TeX Live (`pdflatex` / `lualatex` / `xelatex` + `texlive-lang-spanish`) y expone el log completo por build (`/builds/:id/log`)
+- Compila usando TeX Live (`pdflatex` / `lualatex` / `xelatex` + `texlive-lang-spanish` + `-synctex=1`) y expone diagnóstico de log (`/builds/:id/log`) y búsqueda SyncTeX (`/builds/:id/synctex`)
 
 Para desarrollo local sin Docker (requiere TeX Live instalado en tu sistema):
 
