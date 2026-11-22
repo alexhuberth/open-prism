@@ -72,9 +72,12 @@ interface DocumentState {
   compileError: string | null;
   isCompiling: boolean;
   isSaving: boolean;
+  hydrated: boolean;
   initialized: boolean;
   chatError: string | null;
   pendingProposals: Record<string, PendingProposal>;
+
+  setHydrated: (hydrated: boolean) => void;
 
   setChatError: (error: string | null) => void;
   registerPendingProposal: (proposal: PendingProposal) => void;
@@ -121,6 +124,12 @@ interface DocumentState {
 
   setFileName: (name: string) => void;
   setContent: (content: string) => void;
+  applyCloudSnapshot: (snapshot: {
+    projects: Project[];
+    activeProjectId?: string;
+    projectSort?: ProjectSortOrder;
+    aiModel?: GeminiModelId;
+  }) => void;
 }
 
 function generateId(): string {
@@ -207,9 +216,12 @@ export const useDocumentStore = create<DocumentState>()(
       compileError: null,
       isCompiling: false,
       isSaving: false,
+      hydrated: false,
       initialized: false,
       chatError: null,
       pendingProposals: {},
+
+      setHydrated: (hydrated) => set({ hydrated }),
 
       setChatError: (chatError) => {
         if (get().chatError !== chatError) {
@@ -795,6 +807,60 @@ export const useDocumentStore = create<DocumentState>()(
           })),
         );
       },
+
+      applyCloudSnapshot: (snapshot) => {
+        if (!snapshot.projects || snapshot.projects.length === 0) return;
+
+        set((state) => {
+          const activeProject =
+            snapshot.projects.find((p) => p.id === snapshot.activeProjectId) ??
+            snapshot.projects.find((p) => p.id === state.activeProjectId) ??
+            snapshot.projects[0];
+
+          const docTex = activeProject.files.find(
+            (f) => f.name === "document.tex" || f.name === "main.tex",
+          );
+          const activeFileId = activeProject.files.some(
+            (f) => f.id === activeProject.activeFileId,
+          )
+            ? activeProject.activeFileId
+            : (docTex?.id ?? activeProject.files[0]?.id ?? "");
+
+          const mainFileId = activeProject.files.some(
+            (f) => f.id === activeProject.mainFileId,
+          )
+            ? activeProject.mainFileId
+            : (docTex?.id ?? activeProject.files[0]?.id ?? "");
+
+          const activeFile =
+            activeProject.files.find((f) => f.id === activeFileId) ??
+            activeProject.files[0];
+
+          return {
+            projects: snapshot.projects,
+            activeProjectId: activeProject.id,
+            projectSort: snapshot.projectSort ?? state.projectSort,
+            aiModel: snapshot.aiModel ?? state.aiModel,
+            files: activeProject.files,
+            activeFileId,
+            mainFileId,
+            compiler: activeProject.compiler ?? "pdflatex",
+            fileName: activeFile?.name ?? "document.tex",
+            content: activeFile?.content ?? "",
+            pdfData: null,
+            compileError: null,
+          };
+        });
+
+        const nextActiveId = get().activeProjectId;
+        loadProjectPdf(nextActiveId)
+          .then((cachedPdf) => {
+            if (get().activeProjectId === nextActiveId) {
+              set({ pdfData: cachedPdf });
+            }
+          })
+          .catch(() => {});
+      },
     }),
     {
       name: "open-prism-document",
@@ -834,6 +900,15 @@ export const useDocumentStore = create<DocumentState>()(
           activeProject.files.find((f) => f.id === activeFileId) ??
           activeProject.files[0];
 
+        const restoredPdf =
+          data.pdfData instanceof Uint8Array
+            ? data.pdfData
+            : data.pdfData && typeof data.pdfData === "object"
+              ? new Uint8Array(
+                  Object.values(data.pdfData as Record<string, number>),
+                )
+              : null;
+
         return {
           ...current,
           projects: data.projects,
@@ -846,8 +921,11 @@ export const useDocumentStore = create<DocumentState>()(
           compiler: activeProject.compiler ?? "pdflatex",
           fileName: mergedActiveFile?.name ?? "document.tex",
           content: mergedActiveFile?.content ?? "",
-          pdfData: data.pdfData ?? null,
+          pdfData: restoredPdf && restoredPdf.length > 0 ? restoredPdf : null,
         };
+      },
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated(true);
       },
     },
   ),

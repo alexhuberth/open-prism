@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   SimpleImageAttachmentAdapter,
@@ -11,9 +11,11 @@ import { ThemeProvider } from "next-themes";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { initCloudSync } from "@/lib/supabase/cloud-sync";
 import { useDocumentStore } from "@/stores/document-store";
 
 export function RootProvider({ children }: { children: ReactNode }) {
+  useEffect(() => initCloudSync(), []);
   const attachmentsAdapter = useMemo(
     () => new SimpleImageAttachmentAdapter(),
     [],

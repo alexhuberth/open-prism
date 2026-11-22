@@ -23,11 +23,12 @@ export function useProjectInit() {
   const activeProjectId = useDocumentStore((s) => s.activeProjectId);
   const files = useDocumentStore((s) => s.files);
   const addFile = useDocumentStore((s) => s.addFile);
+  const hydrated = useDocumentStore((s) => s.hydrated);
   const initialized = useDocumentStore((s) => s.initialized);
   const setInitialized = useDocumentStore((s) => s.setInitialized);
 
   useEffect(() => {
-    if (initialized) return;
+    if (!hydrated || initialized) return;
 
     const referencesShowcaseImage = files.some((f) =>
       f.content?.includes("hand-write.jpg"),
@@ -78,5 +79,5 @@ export function useProjectInit() {
         console.error("Failed to load default image:", err);
         setInitialized();
       });
-  }, [activeProjectId, files, addFile, initialized, setInitialized]);
+  }, [activeProjectId, files, addFile, hydrated, initialized, setInitialized]);
 }

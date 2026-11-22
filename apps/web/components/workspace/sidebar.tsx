@@ -2,8 +2,11 @@
 
 import { useState, useRef, useCallback, useMemo } from "react";
 import {
+  AlertCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CloudIcon,
+  CloudOffIcon,
   DownloadIcon,
   FileIcon,
   FileTextIcon,
@@ -21,6 +24,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
+  RefreshCwIcon,
   StarIcon,
   SunIcon,
   Trash2Icon,
@@ -55,9 +59,11 @@ import {
   isTexFile,
   type FileTreeNode,
 } from "@/lib/project-files";
+import { useCloudSyncStore } from "@/lib/supabase/cloud-sync";
 import { cn } from "@/lib/utils";
 import packageJson from "@/package.json";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
+import { CloudAuthDialog } from "./cloud-auth-dialog";
 import { ProjectManagerDialog } from "./project-manager-dialog";
 
 interface TocItem {
@@ -151,6 +157,11 @@ export function Sidebar() {
   const [renameFileId, setRenameFileId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [cloudDialogOpen, setCloudDialogOpen] = useState(false);
+
+  const cloudConfigured = useCloudSyncStore((s) => s.configured);
+  const cloudStatus = useCloudSyncStore((s) => s.status);
+  const cloudUser = useCloudSyncStore((s) => s.user);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -669,6 +680,44 @@ export function Sidebar() {
         )}
       </div>
 
+      {/* Estado de sincronización en la nube */}
+      {cloudConfigured && (
+        <div className="border-sidebar-border border-t px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => setCloudDialogOpen(true)}
+            className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent/50"
+            title="Configurar cuenta y sincronización en Supabase"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              {!cloudUser ? (
+                <CloudOffIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : cloudStatus === "syncing" ? (
+                <RefreshCwIcon className="size-3.5 shrink-0 animate-spin text-amber-500" />
+              ) : cloudStatus === "error" ? (
+                <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
+              ) : (
+                <CloudIcon className="size-3.5 shrink-0 text-emerald-500" />
+              )}
+              <span className="truncate font-medium">
+                {cloudUser
+                  ? (cloudUser.email ?? "Cuenta conectada")
+                  : "Conectar nube"}
+              </span>
+            </div>
+            {cloudUser && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {cloudStatus === "syncing"
+                  ? "Guardando..."
+                  : cloudStatus === "error"
+                    ? "Error"
+                    : "En la nube"}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Pie de barra lateral */}
       <div className="flex items-center justify-between border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
         <span>OpenPrism v{packageJson.version}</span>
@@ -770,6 +819,11 @@ export function Sidebar() {
         open={projectDialogOpen}
         onOpenChange={setProjectDialogOpen}
         initialMode={projectDialogMode}
+      />
+
+      <CloudAuthDialog
+        open={cloudDialogOpen}
+        onOpenChange={setCloudDialogOpen}
       />
     </div>
   );

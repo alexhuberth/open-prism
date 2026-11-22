@@ -62,6 +62,7 @@ export function PdfPreview() {
   const requestJumpToPosition = useDocumentStore(
     (s) => s.requestJumpToPosition,
   );
+  const hydrated = useDocumentStore((s) => s.hydrated);
   const initialized = useDocumentStore((s) => s.initialized);
 
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -106,7 +107,7 @@ export function PdfPreview() {
   }, []);
 
   useEffect(() => {
-    if (!initialized) return;
+    if (!hydrated || !initialized) return;
     if (compiledProjectsRef.current.has(activeProjectId)) return;
     if (pdfData || isCompiling || compileError) return;
 
@@ -114,6 +115,7 @@ export function PdfPreview() {
     runCompile();
   }, [
     activeProjectId,
+    hydrated,
     initialized,
     pdfData,
     isCompiling,
