@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import {
   Fira_Code,
   Geist,
@@ -82,15 +81,6 @@ export default function RootLayout({
       )}
       suppressHydrationWarning
     >
-      <head>
-        {process.env.NODE_ENV === "development" && (
-          <Script
-            src="//unpkg.com/react-grab/dist/index.global.js"
-            crossOrigin="anonymous"
-            strategy="beforeInteractive"
-          />
-        )}
-      </head>
       <body className="h-full font-sans antialiased" suppressHydrationWarning>
         <RootProvider>{children}</RootProvider>
       </body>
