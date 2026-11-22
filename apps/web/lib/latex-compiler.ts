@@ -45,20 +45,45 @@ export async function compileLatex(
   resources: CompileResource[],
   compiler: LatexCompiler = "pdflatex",
 ): Promise<Uint8Array> {
+  const payload = JSON.stringify({ compiler, resources });
   const response = await fetch("/api/compile", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ compiler, resources }),
+    body: payload,
   });
 
   if (!response.ok) {
-    const data = await response.json();
-    const message = data.details
-      ? `${data.error}\n\n${data.details}`
-      : data.error || "Error de compilación";
-    throw new Error(message);
+    const rawText = await response.text();
+    let parsed: { error?: string; details?: string } | null = null;
+    try {
+      parsed = JSON.parse(rawText) as { error?: string; details?: string };
+    } catch {
+      parsed = null;
+    }
+
+    if (
+      response.status === 413 ||
+      /payload too large|entity too large|request entity/i.test(rawText)
+    ) {
+      const payloadMb = (payload.length / (1024 * 1024)).toFixed(1);
+      const serverMsg =
+        parsed?.error ||
+        `El proyecto enviado (${payloadMb} MB) supera el límite máximo permitido por el servidor.`;
+      throw new Error(serverMsg);
+    }
+
+    if (parsed) {
+      const message = parsed.details
+        ? `${parsed.error}\n\n${parsed.details}`
+        : parsed.error || "Error de compilación";
+      throw new Error(message);
+    }
+
+    throw new Error(
+      rawText.trim() || `Error de compilación (HTTP ${response.status})`,
+    );
   }
 
   const arrayBuffer = await response.arrayBuffer();

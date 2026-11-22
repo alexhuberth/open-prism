@@ -18,7 +18,7 @@ create table if not exists public.project_files (
   id text not null,
   project_id text not null,
   name text not null,
-  type text not null check (type in ('tex', 'bib', 'cls', 'sty', 'image', 'binary')),
+  type text not null check (type in ('tex', 'text', 'bib', 'cls', 'sty', 'image', 'binary')),
   content text,
   storage_path text,
   updated_at bigint not null,

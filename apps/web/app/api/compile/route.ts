@@ -34,10 +34,24 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { resources, compiler } = (await req.json()) as {
-      resources: CompileResource[];
-      compiler?: string;
-    };
+    let payload: { resources: CompileResource[]; compiler?: string };
+    try {
+      const rawBody = await req.text();
+      payload = JSON.parse(rawBody) as {
+        resources: CompileResource[];
+        compiler?: string;
+      };
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "No se pudo leer la solicitud de compilación (formato inválido o demasiado grande).",
+        },
+        { status: 400 },
+      );
+    }
+
+    const { resources, compiler } = payload;
 
     const resolvedCompiler =
       compiler && ALLOWED_COMPILERS.has(compiler) ? compiler : "pdflatex";
@@ -89,7 +103,31 @@ export async function POST(req: Request) {
     const contentType = response.headers.get("content-type") ?? "";
 
     if (!response.ok || contentType.includes("application/json")) {
-      const errorData = await response.json();
+      const rawText = await response.text();
+      let errorData: {
+        error?: string;
+        log_files?: Record<string, string>;
+      } = {};
+      try {
+        errorData = JSON.parse(rawText) as {
+          error?: string;
+          log_files?: Record<string, string>;
+        };
+      } catch {
+        errorData = { error: rawText.trim() || `HTTP ${response.status}` };
+      }
+
+      if (response.status === 413) {
+        return NextResponse.json(
+          {
+            error:
+              errorData.error ||
+              "El proyecto completo (código e imágenes) supera el límite máximo permitido por el servidor de compilación.",
+          },
+          { status: 413 },
+        );
+      }
+
       const logContent = errorData.log_files?.["__main_document__.log"] ?? "";
       const errorLines = logContent
         .split("\n")
@@ -107,7 +145,7 @@ export async function POST(req: Request) {
           error: `Error de compilación: ${errorData.error || "Error desconocido"}`,
           details: errorLines || logContent.slice(-1000),
         },
-        { status: 500 },
+        { status: response.status >= 400 ? response.status : 500 },
       );
     }
 

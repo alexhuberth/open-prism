@@ -368,9 +368,13 @@ async function pullAndMergeCloudState(user: User): Promise<void> {
         localProj.files.length === 1 &&
         cloudProj.updatedAt !== localProj.updatedAt;
 
+      // Never overwrite a populated local project with an empty cloud project row
+      const cloudMissingFiles =
+        cloudProj.files.length === 0 && localProj.files.length > 0;
+
       if (
-        !isUntouchedLocalDefault &&
-        localProj.updatedAt > cloudProj.updatedAt
+        cloudMissingFiles ||
+        (!isUntouchedLocalDefault && localProj.updatedAt > cloudProj.updatedAt)
       ) {
         mergedMap.set(cloudProj.id, localProj);
         shouldPushLocalDiffs = true;
@@ -399,12 +403,23 @@ async function pullAndMergeCloudState(user: User): Promise<void> {
   }
 
   if (mergedProjects.length > 0) {
+    const localActive = isAccountSwitch
+      ? undefined
+      : localById.get(localState.activeProjectId);
+    const preferLocalActive = Boolean(
+      localActive &&
+        (!cloudPrefs?.updated_at ||
+          localActive.updatedAt > Number(cloudPrefs.updated_at)),
+    );
+    const resolvedActiveProjectId = preferLocalActive
+      ? localState.activeProjectId
+      : (cloudPrefs?.active_project_id ?? localState.activeProjectId);
+
     isApplyingSnapshot = true;
     try {
       useDocumentStore.getState().applyCloudSnapshot({
         projects: mergedProjects,
-        activeProjectId:
-          cloudPrefs?.active_project_id ?? localState.activeProjectId,
+        activeProjectId: resolvedActiveProjectId,
         projectSort: cloudPrefs?.project_sort ?? localState.projectSort,
         aiModel:
           (cloudPrefs?.ai_model as GeminiModelId | undefined) ??
@@ -583,10 +598,14 @@ async function pushLocalChangesToCloud(userId: string): Promise<void> {
       }
 
       if (fileRowsToUpsert.length > 0) {
-        const { error: filesErr } = await supabase
-          .from("project_files")
-          .upsert(fileRowsToUpsert, { onConflict: "user_id,id" });
-        if (filesErr) throw filesErr;
+        const CHUNK_SIZE = 25;
+        for (let i = 0; i < fileRowsToUpsert.length; i += CHUNK_SIZE) {
+          const chunk = fileRowsToUpsert.slice(i, i + CHUNK_SIZE);
+          const { error: filesErr } = await supabase
+            .from("project_files")
+            .upsert(chunk, { onConflict: "user_id,id" });
+          if (filesErr) throw filesErr;
+        }
       }
 
       recordProjectSnapshot(project, pendingPathRecords);

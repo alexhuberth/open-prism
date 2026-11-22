@@ -11,7 +11,9 @@ import { spawn } from "node:child_process";
 const app = new Hono();
 
 const MAX_CONCURRENT = 3;
-const COMPILE_TIMEOUT_MS = 30000;
+const COMPILE_TIMEOUT_MS = 55000;
+const MAX_BODY_SIZE =
+  Number(process.env.MAX_BODY_SIZE_BYTES) || 100 * 1024 * 1024;
 
 let activeCompilations = 0;
 
@@ -25,7 +27,19 @@ function sanitizePath(workDir: string, filePath: string): string | null {
 }
 
 app.use("/*", cors());
-app.use("/*", bodyLimit({ maxSize: 10 * 1024 * 1024 }));
+app.use(
+  "/*",
+  bodyLimit({
+    maxSize: MAX_BODY_SIZE,
+    onError: (c) =>
+      c.json(
+        {
+          error: `El proyecto supera el tamaño máximo permitido (${Math.round(MAX_BODY_SIZE / (1024 * 1024))} MB).`,
+        } satisfies CompileError,
+        413,
+      ),
+  }),
+);
 
 interface Resource {
   path?: string;

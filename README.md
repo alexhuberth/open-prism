@@ -48,7 +48,7 @@ Configura tus variables en `apps/web/.env.local`:
 
 Si deseas guardar y sincronizar tus proyectos entre distintas computadoras:
 
-1. Crea un proyecto en [Supabase](https://supabase.com/) y ejecuta el script SQL [supabase/migrations/20261122000000_create_open_prism_cloud_sync.sql](./supabase/migrations/20261122000000_create_open_prism_cloud_sync.sql) en el **SQL Editor** (crea las tablas `projects`, `project_files`, `user_preferences`, el bucket privado `project-assets` y las políticas RLS por usuario).
+1. Crea un proyecto en [Supabase](https://supabase.com/) y ejecuta el script SQL [supabase/migrations/20261122000000_create_open_prism_cloud_sync.sql](./supabase/migrations/20261122000000_create_open_prism_cloud_sync.sql) en el **SQL Editor** (crea las tablas `projects`, `project_files`, `user_preferences`, el bucket privado `project-assets` y las políticas RLS por usuario). Si ya habías ejecutado una versión anterior, aplica también [20261122000001_allow_text_project_file_type.sql](./supabase/migrations/20261122000001_allow_text_project_file_type.sql).
 2. Agrega `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` en `apps/web/.env.local`.
 3. Inicia sesión o crea tu cuenta desde el botón **Conectar nube** en la parte inferior izquierda de la barra lateral.
 
@@ -98,9 +98,9 @@ Aplicación Next.js 16 con:
 ### apps/latex-api
 
 API basada en Hono para compilar LaTeX:
-- Recibe el código fuente y archivos adjuntos (`.tex`, imágenes, `.bib`)
-- Compila usando TeX Live (`pdflatex` / `xelatex` / `lualatex` y `bibtex`)
-- Devuelve el PDF compilado
+- Recibe el código fuente y archivos adjuntos (`.tex`, imágenes, `.bib`, `.cls`, `.sty`, etc.) hasta **100 MB** por defecto (ajustable con `MAX_BODY_SIZE_BYTES`)
+- Soporta archivos principales anidados en subcarpetas y bibliografía con `bibtex` (tiempo máximo por ejecución de `55 s`)
+- Compila usando TeX Live (`pdflatex` / `lualatex`) y devuelve el PDF compilado
 
 Para desarrollo local sin Docker (requiere TeX Live instalado en tu sistema):
 
