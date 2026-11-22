@@ -43,7 +43,9 @@ export const LatexTools: FC = () => {
           )}
           <PlusIcon className="size-4 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {isComplete ? "Inserted LaTeX code" : "Inserting LaTeX code..."}
+            {isComplete
+              ? "Código LaTeX insertado"
+              : "Insertando código LaTeX..."}
           </span>
         </div>
       );
@@ -61,7 +63,7 @@ export const LatexTools: FC = () => {
       if (!selectionRange) {
         return {
           success: false,
-          error: "No text is currently selected in the editor",
+          error: "No hay texto seleccionado en el editor",
         };
       }
       replaceSelection(selectionRange.start, selectionRange.end, code);
@@ -86,8 +88,8 @@ export const LatexTools: FC = () => {
             {hasError
               ? result.error
               : isComplete
-                ? "Replaced selection"
-                : "Replacing selection..."}
+                ? "Selección reemplazada"
+                : "Reemplazando selección..."}
           </span>
         </div>
       );
@@ -107,7 +109,7 @@ export const LatexTools: FC = () => {
       if (!success) {
         return {
           success: false,
-          error: `Could not find "${find}" in the document`,
+          error: `No se encontró "${find}" en el documento`,
         };
       }
       return { success: true, message: `Replaced "${find}" with "${replace}"` };
@@ -131,8 +133,8 @@ export const LatexTools: FC = () => {
             {hasError
               ? result.error
               : isComplete
-                ? "Text replaced"
-                : "Finding and replacing..."}
+                ? "Texto reemplazado"
+                : "Buscando y reemplazando..."}
           </span>
         </div>
       );

@@ -125,7 +125,7 @@ export function PdfPreview() {
         setPdfData(data);
       } catch (error) {
         setCompileError(
-          error instanceof Error ? error.message : "Compilation failed",
+          error instanceof Error ? error.message : "Error de compilación",
         );
       } finally {
         setIsCompiling(false);
@@ -179,7 +179,7 @@ export function PdfPreview() {
       setPdfData(data);
     } catch (error) {
       setCompileError(
-        error instanceof Error ? error.message : "Compilation failed",
+        error instanceof Error ? error.message : "Error de compilación",
       );
     } finally {
       setIsCompiling(false);
@@ -192,7 +192,7 @@ export function PdfPreview() {
         <div className="flex flex-1 flex-col items-center justify-center bg-muted/30 p-8">
           <AlertCircleIcon className="mb-4 size-12 text-destructive" />
           <h2 className="mb-2 font-medium text-destructive text-lg">
-            Compilation Error
+            Error de compilación
           </h2>
           <p className="max-w-md text-center text-muted-foreground text-sm">
             {compileError}
@@ -206,10 +206,10 @@ export function PdfPreview() {
         <div className="flex flex-1 flex-col items-center justify-center bg-muted/30 p-8">
           <FileTextIcon className="mb-4 size-16 text-muted-foreground/50" />
           <h2 className="mb-2 font-medium text-lg text-muted-foreground">
-            PDF Preview
+            Vista previa del PDF
           </h2>
           <p className="text-center text-muted-foreground text-sm">
-            Click &quot;Compile&quot; to preview your document
+            Presiona Enter en el editor para compilar y ver tu documento
           </p>
         </div>
       );
@@ -220,7 +220,7 @@ export function PdfPreview() {
         <div className="flex flex-1 flex-col items-center justify-center bg-muted/30 p-8">
           <AlertCircleIcon className="mb-4 size-12 text-destructive" />
           <h2 className="mb-2 font-medium text-destructive text-lg">
-            PDF Load Error
+            Error al cargar el PDF
           </h2>
           <p className="max-w-md text-center text-muted-foreground text-sm">
             {pdfError}
@@ -248,25 +248,28 @@ export function PdfPreview() {
           {isSaving && (
             <>
               <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
-              <span className="text-muted-foreground text-xs">Saving...</span>
+              <span className="text-muted-foreground text-xs">
+                Guardando...
+              </span>
             </>
           )}
           {!isSaving && isCompiling && (
             <>
               <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
               <span className="text-muted-foreground text-xs">
-                Compiling...
+                Compilando...
               </span>
             </>
           )}
           {!isSaving && !isCompiling && pdfData && (
             <>
-              <span className="text-muted-foreground text-xs">Ready</span>
+              <span className="text-muted-foreground text-xs">Listo</span>
               <Button
                 variant="ghost"
                 size="icon"
                 className="size-6"
                 onClick={handleCompile}
+                title="Recompilar"
               >
                 <RefreshCwIcon className="size-3.5" />
               </Button>
@@ -280,6 +283,7 @@ export function PdfPreview() {
                 size="icon"
                 className="size-6"
                 onClick={handleCompile}
+                title="Reintentar compilación"
               >
                 <RefreshCwIcon className="size-3.5" />
               </Button>
@@ -290,7 +294,7 @@ export function PdfPreview() {
         {pdfData && (
           <div className="flex items-center gap-0.5">
             <span className="mr-2 text-muted-foreground text-xs">
-              {numPages} {numPages === 1 ? "page" : "pages"}
+              {numPages} {numPages === 1 ? "página" : "páginas"}
             </span>
             <Button
               variant="ghost"
@@ -331,7 +335,7 @@ export function PdfPreview() {
               size="icon"
               className="size-6"
               onClick={handleDownload}
-              title="Download PDF"
+              title="Descargar PDF"
             >
               <DownloadIcon className="size-3.5" />
             </Button>

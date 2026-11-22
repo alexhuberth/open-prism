@@ -139,51 +139,51 @@ export function EditorToolbar({
       </span>
       <div className="mx-2 h-4 w-px bg-border" />
       <TooltipIconButton
-        tooltip="Bold (\\textbf)"
+        tooltip="Negrita (\\textbf)"
         onClick={() => insertText("\\textbf{", "}")}
       >
         <BoldIcon className="size-4" />
       </TooltipIconButton>
       <TooltipIconButton
-        tooltip="Italic (\\textit)"
+        tooltip="Cursiva (\\textit)"
         onClick={() => insertText("\\textit{", "}")}
       >
         <ItalicIcon className="size-4" />
       </TooltipIconButton>
       <TooltipIconButton
-        tooltip="Code (\\texttt)"
+        tooltip="Código (\\texttt)"
         onClick={() => insertText("\\texttt{", "}")}
       >
         <CodeIcon className="size-4" />
       </TooltipIconButton>
       <div className="mx-2 h-4 w-px bg-border" />
       <TooltipIconButton
-        tooltip="Section"
+        tooltip="Sección"
         onClick={() => insertText("\\section{", "}")}
       >
         <Heading1Icon className="size-4" />
       </TooltipIconButton>
       <TooltipIconButton
-        tooltip="Subsection"
+        tooltip="Subsección"
         onClick={() => insertText("\\subsection{", "}")}
       >
         <Heading2Icon className="size-4" />
       </TooltipIconButton>
       <TooltipIconButton
-        tooltip="List item"
+        tooltip="Elemento de lista"
         onClick={() => insertText("\\item ")}
       >
         <ListIcon className="size-4" />
       </TooltipIconButton>
       <div className="mx-2 h-4 w-px bg-border" />
       <TooltipIconButton
-        tooltip="Inline math ($...$)"
+        tooltip="Matemática en línea ($...$)"
         onClick={() => wrapSelection("$")}
       >
         <FunctionSquareIcon className="size-4" />
       </TooltipIconButton>
       <TooltipIconButton
-        tooltip="Display math (\\[...\\])"
+        tooltip="Matemática en bloque (\\[...\\])"
         onClick={() => insertText("\\[\n  ", "\n\\]")}
       >
         <span className="font-mono text-xs">∫</span>

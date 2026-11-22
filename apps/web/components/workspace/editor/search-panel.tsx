@@ -53,7 +53,7 @@ export function SearchPanel({
         value={searchQuery}
         onChange={(e) => onSearchQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Search..."
+        placeholder="Buscar..."
         className="h-6 w-48 bg-[#1e2127] text-[#abb2bf] text-sm placeholder:text-[#636d83]"
       />
       <div className="flex items-center gap-0.5">
@@ -78,7 +78,9 @@ export function SearchPanel({
       </div>
       {searchQuery && (
         <span className="text-[#636d83] text-xs">
-          {matchCount === 0 ? "No results" : `${currentMatch} of ${matchCount}`}
+          {matchCount === 0
+            ? "Sin resultados"
+            : `${currentMatch} de ${matchCount}`}
         </span>
       )}
       <div className="flex-1" />

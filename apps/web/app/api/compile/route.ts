@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
     if (!success) {
       return NextResponse.json(
-        { error: "Too many requests" },
+        { error: "Demasiadas solicitudes" },
         {
           status: 429,
           headers: {
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     if (!resources || resources.length === 0) {
       return NextResponse.json(
-        { error: "No resources provided" },
+        { error: "No se proporcionaron recursos" },
         { status: 400 },
       );
     }
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
         .join("\n");
       return NextResponse.json(
         {
-          error: `Compilation failed: ${errorData.error || "Unknown error"}`,
+          error: `Error de compilación: ${errorData.error || "Error desconocido"}`,
           details: errorLines || logContent.slice(-1000),
         },
         { status: 500 },
@@ -117,7 +117,9 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Unknown compilation error",
+          error instanceof Error
+            ? error.message
+            : "Error de compilación desconocido",
       },
       { status: 500 },
     );

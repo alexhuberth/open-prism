@@ -20,7 +20,7 @@ export async function compileLatex(
     const data = await response.json();
     const message = data.details
       ? `${data.error}\n\n${data.details}`
-      : data.error || "Compilation failed";
+      : data.error || "Error de compilación";
     throw new Error(message);
   }
 

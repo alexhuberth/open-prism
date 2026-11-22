@@ -111,7 +111,7 @@ export function PdfViewer({
           loading={
             <div className="flex items-center gap-2 text-muted-foreground">
               <LoaderIcon className="size-4 animate-spin" />
-              Loading PDF...
+              Cargando PDF...
             </div>
           }
         >

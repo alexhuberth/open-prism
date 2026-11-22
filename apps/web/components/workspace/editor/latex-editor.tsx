@@ -301,7 +301,7 @@ export function LatexEditor() {
       setPdfData(data);
     } catch (error) {
       setCompileError(
-        error instanceof Error ? error.message : "Compilation failed",
+        error instanceof Error ? error.message : "Error de compilación",
       );
     } finally {
       setIsCompiling(false);

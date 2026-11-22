@@ -110,12 +110,12 @@ export function Sidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddTexFile = () => {
-    const name = newFileName.trim() || "untitled.tex";
+    const name = newFileName.trim() || "sin-titulo.tex";
     const finalName = name.endsWith(".tex") ? name : `${name}.tex`;
     addFile({
       name: finalName,
       type: "tex",
-      content: `\\documentclass{article}\n\n\\begin{document}\n\n% Your content here\n\n\\end{document}\n`,
+      content: `\\documentclass{article}\n\n\\begin{document}\n\n% Tu contenido aquí\n\n\\end{document}\n`,
     });
     setNewFileName("");
     setAddDialogOpen(false);
@@ -208,7 +208,7 @@ export function Sidebar() {
         <div className="flex flex-col">
           <span className="font-semibold text-sm">OpenPrism</span>
           <span className="text-muted-foreground text-xs">
-            By{" "}
+            Por{" "}
             <a
               href="https://www.assistant-ui.com"
               target="_blank"
@@ -224,22 +224,27 @@ export function Sidebar() {
       <div className="flex h-9 items-center justify-between border-sidebar-border border-b px-3">
         <div className="flex items-center gap-2">
           <FolderIcon className="size-4 text-muted-foreground" />
-          <span className="font-medium text-xs">Files</span>
+          <span className="font-medium text-xs">Archivos</span>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-6" title="Add">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              title="Agregar"
+            >
               <PlusIcon className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
               <FileTextIcon className="mr-2 size-4" />
-              New LaTeX File
+              Nuevo archivo LaTeX
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleUploadClick}>
               <UploadIcon className="mr-2 size-4" />
-              Upload File
+              Subir archivo
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -258,7 +263,7 @@ export function Sidebar() {
         {isDragging && (
           <div className="mb-2 flex items-center justify-center rounded-md border-2 border-primary border-dashed p-4">
             <span className="text-muted-foreground text-xs">
-              Drop files here
+              Suelta los archivos aquí
             </span>
           </div>
         )}
@@ -292,7 +297,7 @@ export function Sidebar() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => openRenameDialog(file)}>
                   <PencilIcon className="mr-2 size-4" />
-                  Rename
+                  Renombrar
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
@@ -300,7 +305,7 @@ export function Sidebar() {
                   disabled={files.length <= 1}
                 >
                   <Trash2Icon className="mr-2 size-4" />
-                  Delete
+                  Eliminar
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -310,7 +315,7 @@ export function Sidebar() {
 
       <div className="flex h-9 items-center gap-2 border-sidebar-border border-t px-3">
         <ListIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium text-xs">Outline</span>
+        <span className="font-medium text-xs">Esquema</span>
       </div>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
         {toc.length > 0 ? (
@@ -327,7 +332,7 @@ export function Sidebar() {
           ))
         ) : (
           <div className="px-2 py-1 text-muted-foreground text-xs">
-            No sections found
+            No se encontraron secciones
           </div>
         )}
       </div>
@@ -356,10 +361,10 @@ export function Sidebar() {
             }}
             title={
               theme === "system"
-                ? "System theme"
+                ? "Tema del sistema"
                 : theme === "light"
-                  ? "Light mode"
-                  : "Dark mode"
+                  ? "Modo claro"
+                  : "Modo oscuro"
             }
           >
             {theme === "system" ? (
@@ -377,11 +382,11 @@ export function Sidebar() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New LaTeX File</DialogTitle>
+            <DialogTitle>Nuevo archivo LaTeX</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <Input
-              placeholder="filename.tex"
+              placeholder="nombre-archivo.tex"
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
               onKeyDown={(e) => {
@@ -391,9 +396,9 @@ export function Sidebar() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
-              Cancel
+              Cancelar
             </Button>
-            <Button onClick={handleAddTexFile}>Create</Button>
+            <Button onClick={handleAddTexFile}>Crear</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -402,7 +407,7 @@ export function Sidebar() {
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename File</DialogTitle>
+            <DialogTitle>Renombrar archivo</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <Input
@@ -418,9 +423,9 @@ export function Sidebar() {
               variant="outline"
               onClick={() => setRenameDialogOpen(false)}
             >
-              Cancel
+              Cancelar
             </Button>
-            <Button onClick={handleRename}>Rename</Button>
+            <Button onClick={handleRename}>Renombrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

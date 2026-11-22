@@ -16,8 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Open-Prism | LaTeX Writing Workspace",
-  description: "AI-powered LaTeX writing workspace inspired by OpenAI Prism",
+  title: "Open-Prism | Espacio de trabajo LaTeX",
+  description:
+    "Espacio de trabajo LaTeX impulsado por IA inspirado en OpenAI Prism",
 };
 
 export default function RootLayout({
@@ -26,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="es" className="h-full" suppressHydrationWarning>
       <head>
         {process.env.NODE_ENV === "development" && (
           <Script
@@ -42,6 +43,7 @@ export default function RootLayout({
           geistMono.variable,
           "h-full antialiased",
         )}
+        suppressHydrationWarning
       >
         <RootProvider>{children}</RootProvider>
       </body>

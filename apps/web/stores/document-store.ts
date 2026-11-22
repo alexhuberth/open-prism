@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { indexedDBStorage } from "@/lib/storage/indexeddb-storage";
 
 const DEFAULT_TEX_CONTENT = `\\documentclass[11pt]{article}
+\\usepackage[T1]{fontenc}
 \\usepackage[margin=1in]{geometry}
 \\usepackage{amsmath}
 \\usepackage{graphicx}
@@ -14,21 +15,21 @@ const DEFAULT_TEX_CONTENT = `\\documentclass[11pt]{article}
 
 \\begin{document}
 
-\\section*{What is Open-Prism?}
+\\section*{¿Qué es Open-Prism?}
 
-\\textbf{Open-Prism} is an AI-powered \\LaTeX{} editor for writing scientific documents. It features built-in AI assistance to help you draft and edit text, reason through ideas, and handle formatting.
+\\textbf{Open-Prism} es un editor de \\LaTeX{} impulsado por IA para redactar documentos científicos. Incluye un asistente integrado para ayudarte a escribir y editar texto, desarrollar ideas y dar formato a tus proyectos.
 
-\\section*{Features}
+\\section*{Funcionalidades}
 
 \\begin{multicols}{2}
-Open-Prism integrates AI directly in the editor with access to your project, so you can ask it to:
+Open-Prism integra la IA directamente en el editor con acceso a tu proyecto, así que puedes pedirle cosas como:
 
-\`\`Add the Laplace transform of $t\\cos(at)$ in the introduction.''
+\`\`Agrega la transformada de Laplace de $t\\cos(at)$ en la introducción.''
 \\[
   \\mathcal{L}\\left\\{ t \\cos(a t) \\right\\} = \\frac{ s^2 - a^2 }{ (s^2 + a^2)^2 }
 \\]
 
-\`\`Add a 4\\,$\\times$\\,4 table in the results section.''
+\`\`Agrega una tabla de 4\\,$\\times$\\,4 en la sección de resultados.''
 \\begin{center}
 \\resizebox{0.5\\linewidth}{!}{%
 \\begin{tabular}{|c|c|c|c|}
@@ -45,17 +46,17 @@ Open-Prism integrates AI directly in the editor with access to your project, so 
 }
 \\end{center}
 
-\`\`Please proofread this section, flag any errors or logical gaps, and suggest improvements for clarity.''
+\`\`Por favor revisa esta sección, señala errores o vacíos lógicos y sugiere mejoras de claridad.''
 
-\`\`Am I missing corollaries or implications of Theorem 3.1? Are all bounds tight, or can some be relaxed?''
+\`\`¿Me falta algún corolario o implicación del Teorema 3.1? ¿Todas las cotas son ajustadas o alguna se puede relajar?''
 
 \\columnbreak
 
-\`\`Write an abstract based on the rest of the paper.''
+\`\`Redacta un resumen ejecutivo basado en el resto del artículo.''
 
-\`\`Add references to my paper and suggest related work I may have missed.''
+\`\`Agrega referencias a mi artículo y sugiere trabajos relacionados que pueda haber pasado por alto.''
 
-\`\`Convert this hand-drawn diagram to \\LaTeX{}.''
+\`\`Convierte este diagrama dibujado a mano en código \\LaTeX{}.''
 \\par\\noindent
 \\begin{minipage}[t]{0.49\\linewidth}
   \\vspace{0pt}
@@ -79,16 +80,16 @@ Open-Prism integrates AI directly in the editor with access to your project, so 
 \\end{minipage}
 \\par
 
-\`\`Fill in all missing dependencies in my project.''
+\`\`Completa todas las dependencias faltantes en mi proyecto.''
 
-\`\`Generate a 200-word summary for a general audience.''
+\`\`Genera un resumen de 200 palabras para público general.''
 
-\`\`Create a Beamer presentation with each slide in a separate file.''
+\`\`Crea una presentación en Beamer con cada diapositiva en un archivo separado.''
 \\end{multicols}
 
-\\section*{Getting Started}
+\\section*{Primeros pasos}
 
-Press \\textbf{Enter} to compile your document. Use \\textbf{Shift+Enter} for a new line. The AI assistant panel at the bottom of the editor is ready to help with any \\LaTeX{} questions or tasks.
+Presiona \\textbf{Enter} para compilar tu documento. Usa \\textbf{Shift+Enter} para insertar un salto de línea. El panel del asistente de IA en la parte inferior del editor está listo para ayudarte con cualquier duda o tarea en \\LaTeX{}.
 
 \\end{document}
 `;

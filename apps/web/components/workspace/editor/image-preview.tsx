@@ -13,7 +13,9 @@ export function ImagePreview({ file, scale }: ImagePreviewProps) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-muted/30 p-8">
         <ImageIcon className="mb-4 size-16 text-muted-foreground/50" />
-        <p className="text-muted-foreground text-sm">No image data available</p>
+        <p className="text-muted-foreground text-sm">
+          No hay datos de imagen disponibles
+        </p>
       </div>
     );
   }

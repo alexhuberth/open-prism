@@ -16,6 +16,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CopyIcon,
+  LoaderIcon,
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
@@ -57,7 +58,7 @@ const ThreadScrollToBottom: FC = () => {
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
       <TooltipIconButton
-        tooltip="Scroll to bottom"
+        tooltip="Ir al final"
         variant="outline"
         className="absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible dark:bg-background dark:hover:bg-accent"
       >
@@ -70,10 +71,10 @@ const ThreadScrollToBottom: FC = () => {
 const ThreadWelcome: FC = () => {
   return (
     <div className="mx-auto my-auto flex w-full grow flex-col items-center justify-center px-4">
-      <h1 className="mb-2 font-semibold text-xl">LaTeX Assistant</h1>
+      <h1 className="mb-2 font-semibold text-xl">Asistente de LaTeX</h1>
       <p className="text-center text-muted-foreground text-sm">
-        Ask me anything about LaTeX! I can help you with equations, document
-        structure, formatting, and more.
+        ¡Pregúntame lo que necesites sobre LaTeX! Puedo ayudarte con ecuaciones,
+        estructura de documentos, formato y mucho más.
       </p>
     </div>
   );
@@ -84,11 +85,11 @@ const Composer: FC = () => {
     <ComposerPrimitive.Root className="relative flex w-full flex-col">
       <div className="flex w-full flex-col rounded-2xl border border-input bg-background px-1 pt-2 outline-none transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20">
         <ComposerPrimitive.Input
-          placeholder="Ask about LaTeX..."
+          placeholder="Pregunta sobre LaTeX..."
           className="mb-1 max-h-32 min-h-14 w-full resize-none bg-transparent px-4 pt-2 pb-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-0"
           rows={1}
           autoFocus
-          aria-label="Message input"
+          aria-label="Campo de mensaje"
         />
         <ComposerAction />
       </div>
@@ -102,13 +103,13 @@ const ComposerAction: FC = () => {
       <AuiIf condition={({ thread }) => !thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
-            tooltip="Send message"
+            tooltip="Enviar mensaje"
             side="bottom"
             type="submit"
             variant="default"
             size="icon"
             className="size-8 rounded-full"
-            aria-label="Send message"
+            aria-label="Enviar mensaje"
           >
             <ArrowUpIcon className="size-4" />
           </TooltipIconButton>
@@ -121,7 +122,7 @@ const ComposerAction: FC = () => {
             variant="default"
             size="icon"
             className="size-8 rounded-full"
-            aria-label="Stop generating"
+            aria-label="Detener generación"
           >
             <SquareIcon className="size-3 fill-current" />
           </Button>
@@ -140,6 +141,7 @@ const AssistantMessage: FC = () => {
       <div className="px-2 text-foreground leading-relaxed">
         <MessagePrimitive.Parts
           components={{
+            Empty: AssistantEmpty,
             Text: MarkdownText,
           }}
         />
@@ -151,6 +153,27 @@ const AssistantMessage: FC = () => {
       </div>
     </MessagePrimitive.Root>
   );
+};
+
+const AssistantEmpty: FC<{ status: { type: string; reason?: string } }> = ({
+  status,
+}) => {
+  if (status.type === "running") {
+    return (
+      <div className="flex items-center gap-2 py-1 text-muted-foreground text-sm">
+        <LoaderIcon className="size-4 animate-spin" />
+        <span>Pensando...</span>
+      </div>
+    );
+  }
+  if (status.type === "incomplete" && status.reason === "error") {
+    return (
+      <p className="py-1 text-destructive text-sm">
+        No se pudo generar una respuesta. Inténtalo de nuevo.
+      </p>
+    );
+  }
+  return null;
 };
 
 const MarkdownText: FC = () => {
@@ -170,7 +193,7 @@ const AssistantActionBar: FC = () => {
       className="-ml-1 flex gap-1 text-muted-foreground"
     >
       <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy">
+        <TooltipIconButton tooltip="Copiar">
           <AuiIf condition={({ message }) => message.isCopied}>
             <CheckIcon />
           </AuiIf>
@@ -180,7 +203,7 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
       <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Regenerate">
+        <TooltipIconButton tooltip="Regenerar">
           <RefreshCwIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>
@@ -212,7 +235,7 @@ const BranchPicker: FC<{ className?: string }> = ({ className }) => {
       )}
     >
       <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
+        <TooltipIconButton tooltip="Anterior">
           <ChevronLeftIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Previous>
@@ -220,7 +243,7 @@ const BranchPicker: FC<{ className?: string }> = ({ className }) => {
         <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
       </span>
       <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
+        <TooltipIconButton tooltip="Siguiente">
           <ChevronRightIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Next>

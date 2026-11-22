@@ -119,7 +119,7 @@ export function AIDrawer() {
             ? "pointer-events-none scale-50 opacity-0"
             : "scale-100 opacity-100",
         )}
-        aria-label="Open AI Assistant"
+        aria-label="Abrir asistente de IA"
       >
         <MessageCircleIcon className="size-5 text-foreground" />
       </button>
@@ -182,7 +182,7 @@ const ThreadLoading: FC = () => {
     <AuiIf condition={({ thread }) => thread.isRunning}>
       <div className="flex items-center gap-1.5 px-1 py-1.5 text-muted-foreground">
         <LoaderIcon className="size-3.5 animate-spin" />
-        <span className="text-sm">Thinking...</span>
+        <span className="text-sm">Pensando...</span>
       </div>
     </AuiIf>
   );
@@ -192,7 +192,7 @@ const ThreadScrollToBottom: FC = () => {
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
       <TooltipIconButton
-        tooltip="Scroll to bottom"
+        tooltip="Ir al final"
         variant="outline"
         className="absolute right-4 bottom-2 z-10 rounded-full p-2 disabled:invisible dark:bg-background dark:hover:bg-accent"
       >
@@ -207,10 +207,10 @@ const Composer: FC = () => {
     <ComposerPrimitive.Root className="shrink-0 p-3">
       <div className="flex w-full flex-col rounded-2xl border border-input bg-muted/30 transition-colors focus-within:border-ring focus-within:bg-background">
         <ComposerPrimitive.Input
-          placeholder="Ask about LaTeX..."
+          placeholder="Pregunta sobre LaTeX..."
           className="max-h-40 min-h-10 w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
           autoFocus
-          aria-label="Message input"
+          aria-label="Campo de mensaje"
         />
         <div className="flex items-center justify-end px-2 pb-2">
           <ComposerAction />
@@ -226,13 +226,13 @@ const ComposerAction: FC = () => {
       <AuiIf condition={({ thread }) => !thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
-            tooltip="Send"
+            tooltip="Enviar"
             side="top"
             type="submit"
             variant="default"
             size="icon"
             className="size-8 rounded-full"
-            aria-label="Send message"
+            aria-label="Enviar mensaje"
           >
             <ArrowUpIcon className="size-4" />
           </TooltipIconButton>
@@ -241,12 +241,12 @@ const ComposerAction: FC = () => {
       <AuiIf condition={({ thread }) => thread.isRunning}>
         <ComposerPrimitive.Cancel asChild>
           <TooltipIconButton
-            tooltip="Stop"
+            tooltip="Detener"
             side="top"
             variant="secondary"
             size="icon"
             className="size-8 rounded-full"
-            aria-label="Stop generating"
+            aria-label="Detener generación"
           >
             <SquareIcon className="size-3 fill-current" />
           </TooltipIconButton>
@@ -298,7 +298,7 @@ const CodeBlock: FC<SyntaxHighlighterProps> = ({ language, code }) => {
           className="absolute top-1 right-1 flex items-center gap-0.5 rounded bg-primary px-1.5 py-0.5 text-primary-foreground text-xs opacity-0 transition-opacity group-hover:opacity-100"
         >
           <PlusIcon className="size-3" />
-          Insert
+          Insertar
         </button>
       )}
     </div>
@@ -325,7 +325,7 @@ const AssistantActionBar: FC = () => {
       className="-ml-1 flex gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
     >
       <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy">
+        <TooltipIconButton tooltip="Copiar">
           <AuiIf condition={({ message }) => message.isCopied}>
             <CheckIcon />
           </AuiIf>
@@ -335,7 +335,7 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
       <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Regenerate">
+        <TooltipIconButton tooltip="Regenerar">
           <RefreshCwIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>
@@ -367,7 +367,7 @@ const BranchPicker: FC<{ className?: string }> = ({ className }) => {
       )}
     >
       <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
+        <TooltipIconButton tooltip="Anterior">
           <ChevronLeftIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Previous>
@@ -375,7 +375,7 @@ const BranchPicker: FC<{ className?: string }> = ({ className }) => {
         <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
       </span>
       <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
+        <TooltipIconButton tooltip="Siguiente">
           <ChevronRightIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Next>
