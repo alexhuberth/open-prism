@@ -1,7 +1,12 @@
 import type { LatexCompiler } from "@/lib/latex-compiler";
 import type { ProjectFile } from "@/lib/project-files";
 
-export type ProjectTemplateId = "showcase" | "article" | "beamer" | "blank";
+export type ProjectTemplateId =
+  | "showcase"
+  | "article"
+  | "thesis"
+  | "beamer"
+  | "blank";
 
 export interface ProjectTemplate {
   id: ProjectTemplateId;
@@ -202,6 +207,76 @@ Escribe aquí tu documento en \\LaTeX{}.
 \\end{document}
 `;
 
+const THESIS_MAIN_CONTENT = `\\documentclass[12pt,oneside]{book}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage[spanish,es-tabla]{babel}
+\\usepackage[margin=2.5cm]{geometry}
+\\usepackage{amsmath, amssymb}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+
+\\title{\\textbf{Título de tu Tesis o Libro}}
+\\author{Tu Nombre Completo}
+\\date{\\today}
+
+\\begin{document}
+
+\\frontmatter
+\\maketitle
+
+\\tableofcontents
+\\listoffigures
+\\listoftables
+
+\\mainmatter
+\\include{capitulos/01_introduccion}
+\\include{capitulos/02_marco_teorico}
+\\include{capitulos/03_conclusiones}
+
+\\backmatter
+\\bibliographystyle{plain}
+\\bibliography{referencias}
+
+\\end{document}
+`;
+
+const THESIS_CH1_CONTENT = `\\chapter{Introducción}
+\\label{cap:introduccion}
+
+Presenta el tema principal del libro o tesis, la motivación del estudio y el alcance general de la obra. Puedes referenciar bibliografía como \\cite{einstein1905}.
+
+\\section{Planteamiento del problema}
+Describe la problemática central y las preguntas de investigación.
+
+\\section{Objetivos}
+\\begin{itemize}
+  \\item Objetivo general del trabajo.
+  \\item Objetivos específicos por capítulo.
+\\end{itemize}
+`;
+
+const THESIS_CH2_CONTENT = `\\chapter{Marco Teórico}
+\\label{cap:marco}
+
+Expón los fundamentos matemáticos, conceptuales o históricos sobre los que se construye tu trabajo.
+
+\\section{Fundamentos}
+Por ejemplo, una relación clave en el capítulo~\\ref{cap:marco}:
+\\begin{equation}
+  E = mc^2
+\\end{equation}
+`;
+
+const THESIS_CH3_CONTENT = `\\chapter{Conclusiones}
+\\label{cap:conclusiones}
+
+Sintetiza los hallazgos principales obtenidos a lo largo de los capítulos anteriores.
+
+\\section{Trabajo futuro}
+Propón líneas abiertas de investigación para futuras ediciones o estudios.
+`;
+
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "blank",
@@ -219,6 +294,33 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     mainFileName: "main.tex",
     files: [
       { name: "main.tex", type: "tex", content: ARTICLE_TEX_CONTENT },
+      { name: "referencias.bib", type: "text", content: ARTICLE_BIB_CONTENT },
+    ],
+  },
+  {
+    id: "thesis",
+    name: "Tesis / Libro modular",
+    description:
+      "Estructura book con capítulos separados, índice automático y babel en español",
+    compiler: "pdflatex",
+    mainFileName: "main.tex",
+    files: [
+      { name: "main.tex", type: "tex", content: THESIS_MAIN_CONTENT },
+      {
+        name: "capitulos/01_introduccion.tex",
+        type: "tex",
+        content: THESIS_CH1_CONTENT,
+      },
+      {
+        name: "capitulos/02_marco_teorico.tex",
+        type: "tex",
+        content: THESIS_CH2_CONTENT,
+      },
+      {
+        name: "capitulos/03_conclusiones.tex",
+        type: "tex",
+        content: THESIS_CH3_CONTENT,
+      },
       { name: "referencias.bib", type: "text", content: ARTICLE_BIB_CONTENT },
     ],
   },

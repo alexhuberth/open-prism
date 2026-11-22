@@ -6,13 +6,14 @@ Espacio de trabajo de código abierto para escribir documentos en LaTeX con asis
 
 ## Funcionalidades
 
-- **Gestor de múltiples proyectos** - Crea proyectos desde plantillas (*Documento en blanco*, *Artículo científico*, *Presentación Beamer* o *Documento de ejemplo*), fíjalos, ordénalos por fecha o nombre, renómbralos, duplícalos o elimínalos
+- **Gestor de múltiples proyectos** - Crea proyectos desde plantillas (*Documento en blanco*, *Artículo científico*, *Tesis / Libro modular*, *Presentación Beamer* o *Documento de ejemplo*), fíjalos, ordénalos por fecha o nombre, renómbralos, duplícalos o elimínalos
 - **Carpetas, archivos `.zip` y árbol jerárquico** - Sube archivos sueltos, carpetas completas o paquetes `.zip`, organiza subcarpetas, marca el archivo `.tex` principal y exporta tu proyecto como `.zip`
+- **Preparado para libros de 100+ páginas y tesis modulares** - Visor PDF virtualizado con salto rápido por página (`Pág. X / N`), esquema global siguiendo `\input{}`/`\include{}`, buscador en todo el proyecto (`Ctrl/Cmd+Shift+F`), contador de palabras e importador automático de citas por **DOI / arXiv** hacia `.bib`
 - **Revisión de cambios (Diff) antes de compilar** - Visualiza línea por línea las propuestas de edición de la IA con opciones de **Rechazar**, **Aceptar** o **Aceptar y compilar**
-- **Diagnóstico y corrección automática de errores** - Navega directo a las líneas con error desde el visor PDF (`Ir a línea X`) o pide a la IA corregir la falla con **Corregir con IA**
-- **Asistente IA multimodal (Google Gemini)** - Selector de modelos (`Gemini 4 Hydrogen`, `Gemini 3.5 Flash-Lite`, `Gemini 3.1 Flash-Lite`, etc.), adjunto de imágenes y herramientas multiarchivo (`read_project_file`, `create_project_file`, `find_and_replace`)
+- **Diagnóstico, advertencias y log completo** - Visor de advertencias navegables (`Ir a línea X`) y salida `.log` completa, además de **Corregir con IA** ante errores fatales
+- **Asistente IA multimodal (Google Gemini)** - Selector de modelos (`Gemini 4 Hydrogen`, `Gemini 3.5 Flash-Lite`, `Gemini 3.1 Flash-Lite`, etc.), contexto estructural optimizado para documentos largos, adjunto de imágenes y herramientas multiarchivo (`read_project_file`, `create_project_file`, `find_and_replace`)
 - **Editor CodeMirror 6 inteligente** - Resaltado LaTeX y autocompletado contextual para `\cite{}`, `\ref{}`, `\includegraphics{}` e `\input{}` usando los archivos del proyecto activo
-- **Compilación con `pdflatex` y `lualatex`** - Soporte para archivos principales anidados y bibliografía (`bibtex`) con vista previa en vivo (`react-pdf`) y esquema reactivo de secciones
+- **Compilación rápida con `pdflatex`, `lualatex` y `xelatex`** - Envío binario `multipart/form-data` con caché de imágenes por SHA-256, detección automática de `biber` (`biblatex`), `bibtex` y `makeindex`, y soporte de idioma español (`texlive-lang-spanish`)
 - **Persistencia híbrida (`IndexedDB` + Supabase)** - Guardado local automático en el navegador (con caché de PDF por proyecto) y sincronización opcional en la nube con Supabase Auth, Postgres (RLS) y Storage privado
 
 ## Requisitos previos
@@ -98,9 +99,9 @@ Aplicación Next.js 16 con:
 ### apps/latex-api
 
 API basada en Hono para compilar LaTeX:
-- Recibe el código fuente y archivos adjuntos (`.tex`, imágenes, `.bib`, `.cls`, `.sty`, etc.) hasta **100 MB** por defecto (ajustable con `MAX_BODY_SIZE_BYTES`)
-- Soporta archivos principales anidados en subcarpetas y bibliografía con `bibtex` (tiempo máximo por ejecución de `55 s`)
-- Compila usando TeX Live (`pdflatex` / `lualatex`) y devuelve el PDF compilado
+- Recibe el código fuente y archivos adjuntos (binario directo `multipart/form-data` con caché por hash SHA-256 o JSON) hasta **100 MB** por defecto (ajustable con `MAX_BODY_SIZE_BYTES`)
+- Soporta archivos principales anidados en subcarpetas, `biber` (`biblatex`), `bibtex` y `makeindex` con pasadas automáticas (tiempo máximo por ejecución de `180 s`)
+- Compila usando TeX Live (`pdflatex` / `lualatex` / `xelatex` + `texlive-lang-spanish`) y expone el log completo por build (`/builds/:id/log`)
 
 Para desarrollo local sin Docker (requiere TeX Live instalado en tu sistema):
 

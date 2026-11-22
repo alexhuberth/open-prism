@@ -329,7 +329,12 @@ async function pullAndMergeCloudState(user: User): Promise<void> {
         createdAt: Number(row.created_at),
         updatedAt: Number(row.updated_at),
         pinned: row.pinned,
-        compiler: row.compiler === "lualatex" ? "lualatex" : "pdflatex",
+        compiler:
+          row.compiler === "lualatex"
+            ? "lualatex"
+            : row.compiler === "xelatex"
+              ? "xelatex"
+              : "pdflatex",
         mainFileId: row.main_file_id,
         activeFileId: row.active_file_id,
         files,

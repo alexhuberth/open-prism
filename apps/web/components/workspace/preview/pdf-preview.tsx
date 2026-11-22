@@ -6,13 +6,16 @@ import { useAui } from "@assistant-ui/react";
 import {
   FileTextIcon,
   AlertCircleIcon,
+  AlertTriangleIcon,
   LoaderIcon,
   RefreshCwIcon,
   MinusIcon,
   PlusIcon,
   DownloadIcon,
+  ScrollTextIcon,
   SparklesIcon,
 } from "lucide-react";
+import { CompileLogDialog } from "./compile-log-dialog";
 import { useDocumentStore } from "@/stores/document-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +59,9 @@ export function PdfPreview() {
   const setProjectCompiler = useDocumentStore((s) => s.setProjectCompiler);
   const pdfData = useDocumentStore((s) => s.pdfData);
   const compileError = useDocumentStore((s) => s.compileError);
+  const compileBuildId = useDocumentStore((s) => s.compileBuildId);
+  const compileWarningCount = useDocumentStore((s) => s.compileWarningCount);
+  const compileFullLog = useDocumentStore((s) => s.compileFullLog);
   const isCompiling = useDocumentStore((s) => s.isCompiling);
   const isSaving = useDocumentStore((s) => s.isSaving);
   const content = useDocumentStore((s) => s.content);
@@ -67,7 +73,14 @@ export function PdfPreview() {
 
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageInput, setPageInput] = useState<string>("1");
+  const [jumpToPage, setJumpToPage] = useState<{
+    page: number;
+    nonce: number;
+  } | null>(null);
   const [scale, setScale] = useState<number>(1.0);
+  const [logDialogOpen, setLogDialogOpen] = useState(false);
   const compiledProjectsRef = useRef<Set<string>>(new Set());
 
   const parsedErrors = useMemo(
@@ -141,8 +154,28 @@ export function PdfPreview() {
     URL.revokeObjectURL(url);
   };
 
-  const handleLoadSuccess = (pages: number) => {
+  const handleLoadSuccess = useCallback((pages: number) => {
     setNumPages(pages);
+  }, []);
+
+  const handleCurrentPageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+    setPageInput(String(page));
+  }, []);
+
+  const handlePageJumpCommit = () => {
+    if (numPages <= 1) return;
+    const parsed = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsed)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    const clamped = Math.min(numPages, Math.max(1, parsed));
+    setPageInput(String(clamped));
+    setJumpToPage((prev) => ({
+      page: clamped,
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
   };
 
   const handleScaleChange = (newScale: number) => {
@@ -247,6 +280,16 @@ export function PdfPreview() {
               <RefreshCwIcon className="mr-1.5 size-4" />
               Reintentar
             </Button>
+            {(compileFullLog || compileBuildId) && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLogDialogOpen(true)}
+              >
+                <ScrollTextIcon className="mr-1.5 size-4" />
+                Ver log completo
+              </Button>
+            )}
           </div>
         </div>
       );
@@ -284,8 +327,10 @@ export function PdfPreview() {
       <PdfViewer
         data={pdfData}
         scale={scale}
+        jumpToPage={jumpToPage}
         onError={setPdfError}
         onLoadSuccess={handleLoadSuccess}
+        onCurrentPageChange={handleCurrentPageChange}
         onScaleChange={handleScaleChange}
         onTextClick={handleTextClick}
       />
@@ -359,15 +404,60 @@ export function PdfPreview() {
             <SelectContent>
               <SelectItem value="pdflatex">pdflatex</SelectItem>
               <SelectItem value="lualatex">lualatex</SelectItem>
+              <SelectItem value="xelatex">xelatex</SelectItem>
             </SelectContent>
           </Select>
+
+          {(compileBuildId || compileFullLog) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-1 h-6 gap-1 px-1.5 text-xs"
+              onClick={() => setLogDialogOpen(true)}
+              title="Ver advertencias y log de compilación"
+            >
+              {compileWarningCount > 0 ? (
+                <>
+                  <AlertTriangleIcon className="size-3.5 text-amber-500" />
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {compileWarningCount}
+                  </span>
+                </>
+              ) : (
+                <ScrollTextIcon className="size-3.5 text-muted-foreground" />
+              )}
+            </Button>
+          )}
         </div>
 
         {pdfData && (
           <div className="flex items-center gap-0.5">
-            <span className="mr-2 text-muted-foreground text-xs">
-              {numPages} {numPages === 1 ? "página" : "páginas"}
-            </span>
+            {numPages > 1 ? (
+              <div className="mr-2 flex items-center gap-1 whitespace-nowrap text-muted-foreground text-xs">
+                <span>Pág.</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="Ir a página del PDF"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onBlur={handlePageJumpCommit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.currentTarget.blur();
+                      handlePageJumpCommit();
+                    }
+                  }}
+                  className="h-5 w-10 rounded border border-input bg-background px-1 text-center text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <span>/ {numPages}</span>
+              </div>
+            ) : (
+              <span className="mr-2 whitespace-nowrap text-muted-foreground text-xs">
+                {numPages} {numPages === 1 ? "página" : "páginas"}
+              </span>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -416,6 +506,12 @@ export function PdfPreview() {
       </div>
 
       {renderContent()}
+
+      <CompileLogDialog
+        open={logDialogOpen}
+        onOpenChange={setLogDialogOpen}
+        onJumpToLine={handleJumpToMainLine}
+      />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   AlertCircleIcon,
+  BookMarkedIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloudIcon,
@@ -25,6 +26,7 @@ import {
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   StarIcon,
   SunIcon,
   Trash2Icon,
@@ -59,48 +61,19 @@ import {
   isTexFile,
   type FileTreeNode,
 } from "@/lib/project-files";
+import {
+  buildProjectOutline,
+  countProjectWords,
+  type GlobalOutlineItem,
+} from "@/lib/latex-outline";
 import { useCloudSyncStore } from "@/lib/supabase/cloud-sync";
 import { cn } from "@/lib/utils";
 import packageJson from "@/package.json";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
+import { CitationImportDialog } from "./citation-import-dialog";
 import { CloudAuthDialog } from "./cloud-auth-dialog";
 import { ProjectManagerDialog } from "./project-manager-dialog";
-
-interface TocItem {
-  level: number;
-  title: string;
-  line: number;
-}
-
-function parseTableOfContents(content: string): TocItem[] {
-  const lines = content.split("\n");
-  const toc: TocItem[] = [];
-
-  const sectionRegex =
-    /\\(section|subsection|subsubsection|chapter|part)\*?\s*\{([^}]*)\}/;
-
-  const levelMap: Record<string, number> = {
-    part: 0,
-    chapter: 1,
-    section: 2,
-    subsection: 3,
-    subsubsection: 4,
-  };
-
-  lines.forEach((line, index) => {
-    const match = line.match(sectionRegex);
-    if (match) {
-      const [, type, title] = match;
-      toc.push({
-        level: levelMap[type] ?? 2,
-        title: title.trim(),
-        line: index + 1,
-      });
-    }
-  });
-
-  return toc;
-}
+import { ProjectSearchDialog } from "./project-search-dialog";
 
 export function Sidebar() {
   const projects = useDocumentStore((s) => s.projects);
@@ -117,7 +90,6 @@ export function Sidebar() {
   const deleteFile = useDocumentStore((s) => s.deleteFile);
   const deleteFolder = useDocumentStore((s) => s.deleteFolder);
   const renameFile = useDocumentStore((s) => s.renameFile);
-  const content = useDocumentStore((s) => s.content);
   const requestJumpToPosition = useDocumentStore(
     (s) => s.requestJumpToPosition,
   );
@@ -141,7 +113,11 @@ export function Sidebar() {
   }, [projects, projectSort]);
 
   const fileTree = useMemo(() => buildFileTree(files), [files]);
-  const toc = useMemo(() => parseTableOfContents(content), [content]);
+  const toc = useMemo(
+    () => buildProjectOutline(files, mainFileId),
+    [files, mainFileId],
+  );
+  const wordCount = useMemo(() => countProjectWords(files), [files]);
 
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
@@ -158,6 +134,8 @@ export function Sidebar() {
   const [renameValue, setRenameValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [cloudDialogOpen, setCloudDialogOpen] = useState(false);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [citationDialogOpen, setCitationDialogOpen] = useState(false);
 
   const cloudConfigured = useCloudSyncStore((s) => s.configured);
   const cloudStatus = useCloudSyncStore((s) => s.status);
@@ -167,16 +145,34 @@ export function Sidebar() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
-  const handleTocClick = useCallback(
-    (line: number) => {
-      const lines = content.split("\n");
-      let position = 0;
-      for (let i = 0; i < line - 1 && i < lines.length; i++) {
-        position += lines[i].length + 1;
+  useEffect(() => {
+    const handleGlobalSearchShortcut = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "f"
+      ) {
+        e.preventDefault();
+        setSearchDialogOpen(true);
       }
-      requestJumpToPosition(position);
+    };
+    window.addEventListener("keydown", handleGlobalSearchShortcut);
+    return () =>
+      window.removeEventListener("keydown", handleGlobalSearchShortcut);
+  }, []);
+
+  const handleTocClick = useCallback(
+    (item: GlobalOutlineItem) => {
+      if (item.fileId !== activeFileId) {
+        setActiveFile(item.fileId);
+        setTimeout(() => {
+          requestJumpToPosition(item.offset);
+        }, 35);
+      } else {
+        requestJumpToPosition(item.offset);
+      }
     },
-    [content, requestJumpToPosition],
+    [activeFileId, setActiveFile, requestJumpToPosition],
   );
 
   const toggleFolder = (path: string) => {
@@ -556,20 +552,20 @@ export function Sidebar() {
       </div>
 
       {/* Barra de Archivos */}
-      <div className="flex h-9 items-center justify-between border-sidebar-border border-b px-3">
-        <div className="flex items-center gap-2">
-          <FolderIcon className="size-4 text-muted-foreground" />
-          <span className="font-medium text-xs">Archivos</span>
+      <div className="flex h-9 items-center justify-between gap-1 border-sidebar-border border-b px-2.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium text-xs">Archivos</span>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
             className="size-6"
-            title="Descargar proyecto (.zip)"
-            onClick={handleExportCurrentZip}
+            title="Buscar en todo el proyecto (Ctrl/Cmd+Shift+F)"
+            onClick={() => setSearchDialogOpen(true)}
           >
-            <DownloadIcon className="size-3.5" />
+            <SearchIcon className="size-3.5" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -577,7 +573,7 @@ export function Sidebar() {
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                title="Agregar"
+                title="Agregar o exportar"
               >
                 <PlusIcon className="size-3.5" />
               </Button>
@@ -586,6 +582,10 @@ export function Sidebar() {
               <DropdownMenuItem onClick={() => openNewFileDialog()}>
                 <FileTextIcon className="mr-2 size-4" />
                 Nuevo archivo
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCitationDialogOpen(true)}>
+                <BookMarkedIcon className="mr-2 size-4" />
+                Importar cita (DOI / arXiv)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                 <UploadIcon className="mr-2 size-4" />
@@ -655,19 +655,35 @@ export function Sidebar() {
       </div>
 
       {/* Esquema */}
-      <div className="flex h-9 items-center gap-2 border-sidebar-border border-t px-3">
-        <ListIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium text-xs">Esquema</span>
+      <div className="flex h-9 items-center justify-between gap-1 border-sidebar-border border-t px-2.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <ListIcon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium text-xs">Esquema</span>
+        </div>
+        <span
+          className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground"
+          title="Conteo aproximado de palabras en archivos .tex"
+        >
+          {wordCount.toLocaleString("es")} pal.
+        </span>
       </div>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
         {toc.length > 0 ? (
           toc.map((item, index) => (
             <button
-              key={index}
+              key={`${item.fileId}-${item.line}-${index}`}
               type="button"
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-sidebar-accent/50"
-              style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
-              onClick={() => handleTocClick(item.line)}
+              className={cn(
+                "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-sidebar-accent/50",
+                item.fileId === activeFileId
+                  ? "text-sidebar-foreground"
+                  : "text-muted-foreground",
+              )}
+              style={{
+                paddingLeft: `${Math.max(0, item.level - 1) * 10 + 8}px`,
+              }}
+              onClick={() => handleTocClick(item)}
+              title={`${item.fileName} : línea ${item.line}`}
             >
               <HashIcon className="size-3 shrink-0 text-muted-foreground" />
               <span className="truncate">{item.title}</span>
@@ -824,6 +840,16 @@ export function Sidebar() {
       <CloudAuthDialog
         open={cloudDialogOpen}
         onOpenChange={setCloudDialogOpen}
+      />
+
+      <ProjectSearchDialog
+        open={searchDialogOpen}
+        onOpenChange={setSearchDialogOpen}
+      />
+
+      <CitationImportDialog
+        open={citationDialogOpen}
+        onOpenChange={setCitationDialogOpen}
       />
     </div>
   );

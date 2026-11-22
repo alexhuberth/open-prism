@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo } from "react";
 import { useAui } from "@assistant-ui/store";
+import { buildProjectOutline } from "@/lib/latex-outline";
 import { useDocumentStore } from "@/stores/document-store";
+
+const MAX_ACTIVE_FILE_CHARS = 35000;
+
+function formatContentForContext(content: string): string {
+  if (content.length <= MAX_ACTIVE_FILE_CHARS) {
+    return content;
+  }
+  const head = content.slice(0, 18000);
+  const tail = content.slice(-14000);
+  return `${head}\n\n% ... [${content.length - 32000} caracteres intermedios omitidos; usa read_project_file si necesitas inspeccionar todo] ...\n\n${tail}`;
+}
 
 export function useDocumentContext() {
   const aui = useAui();
@@ -39,10 +51,26 @@ export function useDocumentContext() {
       .join("\n");
   }, [files, mainFileId, activeFileId]);
 
+  const outlineSummary = useMemo(() => {
+    const outline = buildProjectOutline(files, mainFileId);
+    if (outline.length === 0) return "";
+    return outline
+      .slice(0, 80)
+      .map(
+        (item) =>
+          `${"  ".repeat(Math.max(0, item.level))}- ${item.title} (${item.fileName}:${item.line})`,
+      )
+      .join("\n");
+  }, [files, mainFileId]);
+
   useEffect(() => {
     const selectionInfo = hasSelection
       ? `El usuario tiene seleccionado el siguiente texto en "${fileName}":\n\`\`\`\n${selectedText}\n\`\`\`\nPuedes usar replace_selection para proponer su reemplazo.`
       : "El usuario NO tiene texto seleccionado. No uses replace_selection.";
+
+    const outlineBlock = outlineSummary
+      ? `\nEstructura del documento:\n${outlineSummary}\n`
+      : "";
 
     return aui.modelContext().register({
       getModelContext: () => ({
@@ -52,10 +80,10 @@ export function useDocumentContext() {
         system: `Proyecto actual: "${activeProject?.name ?? "Proyecto"}" (motor: ${compiler}).
 Archivos del proyecto:
 ${projectFilesSummary}
-
+${outlineBlock}
 El usuario está editando actualmente el archivo "${fileName}":
 \`\`\`latex
-${content}
+${formatContentForContext(content)}
 \`\`\`
 
 ${selectionInfo}
@@ -69,6 +97,7 @@ Si necesitas consultar otro archivo de la lista (por ejemplo .bib o capítulos i
     compiler,
     aiModel,
     projectFilesSummary,
+    outlineSummary,
     fileName,
     content,
     hasSelection,

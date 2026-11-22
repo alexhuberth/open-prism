@@ -70,6 +70,10 @@ interface DocumentState {
   isThreadOpen: boolean;
   pdfData: Uint8Array | null;
   compileError: string | null;
+  compileBuildId: string | null;
+  compileWarnings: string[];
+  compileWarningCount: number;
+  compileFullLog: string | null;
   isCompiling: boolean;
   isSaving: boolean;
   hydrated: boolean;
@@ -115,6 +119,12 @@ interface DocumentState {
   setThreadOpen: (open: boolean) => void;
   setPdfData: (data: Uint8Array | null) => void;
   setCompileError: (error: string | null) => void;
+  setCompileDiagnostics: (meta: {
+    buildId: string | null;
+    warnings: string[];
+    warningCount: number;
+    fullLog: string | null;
+  }) => void;
   setIsCompiling: (isCompiling: boolean) => void;
   setIsSaving: (isSaving: boolean) => void;
   insertAtCursor: (text: string) => void;
@@ -135,6 +145,14 @@ interface DocumentState {
 function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
+
+const RESET_COMPILE_DIAGNOSTICS = {
+  compileError: null,
+  compileBuildId: null,
+  compileWarnings: [] as string[],
+  compileWarningCount: 0,
+  compileFullLog: null,
+};
 
 function createInitialDefaultProject(): Project {
   const now = Date.now();
@@ -214,6 +232,10 @@ export const useDocumentStore = create<DocumentState>()(
       isThreadOpen: false,
       pdfData: null,
       compileError: null,
+      compileBuildId: null,
+      compileWarnings: [],
+      compileWarningCount: 0,
+      compileFullLog: null,
       isCompiling: false,
       isSaving: false,
       hydrated: false,
@@ -321,7 +343,7 @@ export const useDocumentStore = create<DocumentState>()(
           cursorPosition: 0,
           selectionRange: null,
           pdfData: null,
-          compileError: null,
+          ...RESET_COMPILE_DIAGNOSTICS,
           pendingProposals: {},
           initialized: templateId === "showcase" ? false : state.initialized,
         }));
@@ -350,7 +372,7 @@ export const useDocumentStore = create<DocumentState>()(
           cursorPosition: 0,
           selectionRange: null,
           pdfData: null,
-          compileError: null,
+          ...RESET_COMPILE_DIAGNOSTICS,
           pendingProposals: {},
         });
 
@@ -419,7 +441,7 @@ export const useDocumentStore = create<DocumentState>()(
           cursorPosition: 0,
           selectionRange: null,
           pdfData: null,
-          compileError: null,
+          ...RESET_COMPILE_DIAGNOSTICS,
         }));
 
         return copy.id;
@@ -709,6 +731,14 @@ export const useDocumentStore = create<DocumentState>()(
           saveProjectPdf(projectId, null).catch(() => {});
         }
       },
+
+      setCompileDiagnostics: (meta) =>
+        set({
+          compileBuildId: meta.buildId,
+          compileWarnings: meta.warnings,
+          compileWarningCount: meta.warningCount,
+          compileFullLog: meta.fullLog,
+        }),
 
       setIsCompiling: (isCompiling) => set({ isCompiling }),
 

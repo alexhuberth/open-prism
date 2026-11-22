@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-pictures \
     texlive-fonts-recommended \
     texlive-science \
+    texlive-xetex \
+    texlive-lang-spanish \
+    texlive-bibtex-extra \
+    biber \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
