@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo } from "react";
 import { useAui } from "@assistant-ui/store";
-import { analyzeCompileDiagnostics } from "@/lib/latex-log-parser";
+import {
+  analyzeCompileDiagnostics,
+  inspectProjectCompileIntegrity,
+} from "@/lib/latex-log-parser";
 import { buildProjectOutline } from "@/lib/latex-outline";
 import { useDocumentStore } from "@/stores/document-store";
 
@@ -71,8 +74,39 @@ export function useDocumentContext() {
 
   const compileStatusSummary = useMemo(() => {
     const mainFile = files.find((f) => f.id === mainFileId) ?? files[0];
+    const integrity = inspectProjectCompileIntegrity({ files, mainFileId });
+
+    const integrityHints: string[] = [];
+    if (integrity.wrongMainFileCandidate) {
+      integrityHints.push(
+        `Alerta estructural: el archivo principal actual ("${mainFile?.name}") NO declara \\documentclass, mientras que "${integrity.wrongMainFileCandidate}" sí lo hace. Considera usar set_main_file.`,
+      );
+    }
+    if (integrity.caseMismatchedPaths.length > 0) {
+      const sample = integrity.caseMismatchedPaths
+        .slice(0, 3)
+        .map(
+          (m) =>
+            `${m.inFile}:${m.line} referencia "${m.referenced}" pero el archivo real es "${m.actualFile}"`,
+        )
+        .join("; ");
+      integrityHints.push(
+        `Diferencias de mayúsculas/minúsculas (Linux es case-sensitive): ${sample}`,
+      );
+    }
+    if (integrity.missingReferencedFiles.length > 0) {
+      const sample = integrity.missingReferencedFiles
+        .slice(0, 3)
+        .map((m) => `${m.inFile}:${m.line} (\\${m.command}{${m.target}})`)
+        .join("; ");
+      integrityHints.push(`Archivos incluidos no encontrados: ${sample}`);
+    }
+
+    const integrityBlock =
+      integrityHints.length > 0 ? `\n${integrityHints.join("\n")}` : "";
+
     if (!compileError && !pdfData && compileWarningCount === 0) {
-      return "Estado de compilación: aún no compilado.";
+      return `Estado de compilación: aún no compilado.${integrityBlock}`;
     }
 
     const analysis = analyzeCompileDiagnostics({
@@ -104,7 +138,7 @@ export function useDocumentContext() {
       ? `\nSugerencia detectada: el log indica incompatibilidad con "${compiler}". Considera cambiar a "${analysis.suggestedCompiler}" o "lualatex" mediante set_latex_compiler.`
       : "";
 
-    return `${statusLine}${engineHint}${topItems ? `\nDiagnósticos recientes:\n${topItems}` : ""}`;
+    return `${statusLine}${engineHint}${integrityBlock}${topItems ? `\nDiagnósticos recientes:\n${topItems}` : ""}`;
   }, [
     files,
     mainFileId,

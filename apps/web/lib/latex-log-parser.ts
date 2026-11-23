@@ -1,4 +1,5 @@
 import type { LatexCompiler } from "@/lib/latex-compiler";
+import { isTexFile, type ProjectFile } from "@/lib/project-files";
 
 export type DiagnosticSeverity = "error" | "warning";
 
@@ -222,6 +223,31 @@ export function analyzeCompileDiagnostics(params: {
       continue;
     }
 
+    // 2b. Biber / BibTeX errors captured in log
+    if (
+      /^ERROR\s*-\s*.+/.test(trimmed) ||
+      /^FATAL\s*-\s*.+/.test(trimmed) ||
+      /^I couldn't open file name/i.test(trimmed) ||
+      /^I found no (?:\\citation|\\bibdata|\\bibstyle)/i.test(trimmed)
+    ) {
+      const dedupeKey = `error:bib:${trimmed}`;
+      if (!seenKeys.has(dedupeKey)) {
+        seenKeys.add(dedupeKey);
+        diagnostics.push({
+          id: `err-${diagnostics.length}`,
+          severity: "error",
+          title: trimmed,
+          file: mainFileName,
+          isProjectFile: Boolean(mainFileName),
+          excerpt: lines
+            .slice(i, Math.min(lines.length, i + 3))
+            .join("\n")
+            .trimEnd(),
+        });
+      }
+      continue;
+    }
+
     // 3. Warnings found in log
     if (
       /^LaTeX(?:\s+Font)?\s+Warning:/i.test(trimmed) ||
@@ -365,5 +391,161 @@ export function buildFixPromptForDiagnostics(params: {
 ${engineNote}
 ${formattedItems}
 
-Usa las herramientas necesarias (\`get_compile_diagnostics\`, \`read_project_file\`, \`find_and_replace\`, \`create_project_file\`, \`set_latex_compiler\`, \`compile_project\`) para diagnosticar la causa raíz y proponer la solución.`;
+Usa las herramientas necesarias (\`get_compile_diagnostics\`, \`search_project_files\`, \`read_project_file\`, \`find_and_replace\`, \`rewrite_project_file\`, \`create_project_file\`, \`set_main_file\`, \`set_latex_compiler\`, \`compile_project\`) para diagnosticar la causa raíz y proponer la solución.`;
+}
+
+export function extractSourceSnippet(
+  content: string,
+  targetLine: number,
+  radius = 6,
+): string {
+  const lines = content.split("\n");
+  if (targetLine < 1 || lines.length === 0) return "";
+  const start = Math.max(0, targetLine - 1 - radius);
+  const end = Math.min(lines.length, targetLine + radius);
+  const out: string[] = [];
+  for (let i = start; i < end; i++) {
+    const ln = i + 1;
+    const prefix = ln === targetLine ? ">>" : "  ";
+    out.push(`${prefix} ${String(ln).padStart(4, " ")}: ${lines[i]}`);
+  }
+  return out.join("\n");
+}
+
+export interface ProjectIntegrityReport {
+  mainFileHasDocumentClass: boolean;
+  wrongMainFileCandidate: string | null;
+  caseMismatchedPaths: Array<{
+    inFile: string;
+    line: number;
+    referenced: string;
+    actualFile: string;
+  }>;
+  missingReferencedFiles: Array<{
+    inFile: string;
+    line: number;
+    command: string;
+    target: string;
+  }>;
+  styleAndClassFiles: string[];
+  bibFiles: string[];
+}
+
+export function inspectProjectCompileIntegrity(params: {
+  files: ProjectFile[];
+  mainFileId: string | null;
+}): ProjectIntegrityReport {
+  const { files, mainFileId } = params;
+  const mainFile =
+    files.find((f) => f.id === mainFileId) ??
+    files.find((f) => isTexFile(f)) ??
+    files[0];
+
+  const mainFileHasDocumentClass = Boolean(
+    mainFile?.content && /\\documentclass\b/.test(mainFile.content),
+  );
+
+  let wrongMainFileCandidate: string | null = null;
+  if (!mainFileHasDocumentClass) {
+    const better = files.find(
+      (f) =>
+        isTexFile(f) &&
+        f.id !== mainFile?.id &&
+        /\\documentclass\b/.test(f.content ?? ""),
+    );
+    if (better) {
+      wrongMainFileCandidate = better.name;
+    }
+  }
+
+  const allPaths = files.map((f) => f.name);
+  const lowerPathMap = new Map<string, string>();
+  for (const p of allPaths) {
+    lowerPathMap.set(p.toLowerCase(), p);
+  }
+
+  const caseMismatchedPaths: ProjectIntegrityReport["caseMismatchedPaths"] = [];
+  const missingReferencedFiles: ProjectIntegrityReport["missingReferencedFiles"] =
+    [];
+
+  const resolveCandidates = (refTarget: string, baseDir: string): string[] => {
+    const clean = refTarget.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+    if (!clean) return [];
+    const baseCandidates = baseDir ? [`${baseDir}/${clean}`, clean] : [clean];
+    const expanded: string[] = [];
+    for (const c of baseCandidates) {
+      expanded.push(c);
+      if (!/\.[a-z0-9]{1,5}$/i.test(c)) {
+        expanded.push(
+          `${c}.tex`,
+          `${c}.pdf`,
+          `${c}.png`,
+          `${c}.jpg`,
+          `${c}.bib`,
+        );
+      }
+    }
+    return expanded;
+  };
+
+  for (const file of files) {
+    if (!isTexFile(file) || !file.content) continue;
+    const baseDir = file.name.includes("/")
+      ? file.name.slice(0, file.name.lastIndexOf("/"))
+      : "";
+    const lines = file.content.split("\n");
+
+    for (let idx = 0; idx < lines.length; idx++) {
+      const lineText = lines[idx];
+      if (lineText.trimStart().startsWith("%")) continue;
+
+      const cmdRegex =
+        /\\(input|include|includegraphics|bibliography|addbibresource)(?:\[[^\]]*\])?\{([^}]+)\}/g;
+      let match = cmdRegex.exec(lineText);
+      while (match) {
+        const command = match[1];
+        const targets =
+          command === "bibliography"
+            ? match[2].split(",").map((s) => s.trim())
+            : [match[2].trim()];
+
+        for (const rawTarget of targets) {
+          if (!rawTarget || rawTarget.includes("\\")) continue;
+          const candidates = resolveCandidates(rawTarget, baseDir);
+          const exactHit = candidates.some((c) => allPaths.includes(c));
+          if (exactHit) continue;
+
+          const caseHit = candidates
+            .map((c) => lowerPathMap.get(c.toLowerCase()))
+            .find(Boolean);
+
+          if (caseHit) {
+            caseMismatchedPaths.push({
+              inFile: file.name,
+              line: idx + 1,
+              referenced: rawTarget,
+              actualFile: caseHit,
+            });
+          } else if (command !== "includegraphics") {
+            missingReferencedFiles.push({
+              inFile: file.name,
+              line: idx + 1,
+              command,
+              target: rawTarget,
+            });
+          }
+        }
+        match = cmdRegex.exec(lineText);
+      }
+    }
+  }
+
+  return {
+    mainFileHasDocumentClass,
+    wrongMainFileCandidate,
+    caseMismatchedPaths: caseMismatchedPaths.slice(0, 15),
+    missingReferencedFiles: missingReferencedFiles.slice(0, 15),
+    styleAndClassFiles: allPaths.filter((p) => /\.(cls|sty|bst)$/i.test(p)),
+    bibFiles: allPaths.filter((p) => p.toLowerCase().endsWith(".bib")),
+  };
 }

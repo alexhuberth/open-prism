@@ -9,7 +9,7 @@ import {
 import { NextResponse } from "next/server";
 import { chatRatelimit, getIP } from "@/lib/ratelimit";
 
-export const maxDuration = 30;
+export const maxDuration = 90;
 
 const ALLOWED_MODELS = new Set([
   "gemini-4-hydrogen",
@@ -38,21 +38,26 @@ Al proporcionar código LaTeX:
 
 Tienes acceso al archivo activo y a la lista de archivos del proyecto en el contexto. Si el usuario adjunta imágenes (como fotos de ecuaciones escritas a mano, pizarras o diagramas), transcríbelas a código LaTeX o TikZ limpio y listo para compilar.
 
-Tienes herramientas disponibles para inspeccionar el proyecto, diagnosticar compilaciones y proponer cambios (el usuario revisará el diff antes de aceptarlos y compilar):
-- Usa get_compile_diagnostics para consultar los errores, advertencias, motor recomendado y extracto del log completo de la última compilación
-- Usa read_project_file para leer el contenido de otro archivo del proyecto (.tex, .bib, .sty, .cls, etc.) cuando necesites revisarlo
-- Usa set_latex_compiler para proponer cambiar el motor de compilación (pdflatex, lualatex o xelatex) y recompilar, por ejemplo cuando fontspec, unicode-math o \babelfont requieran xelatex o lualatex
+Tienes herramientas disponibles para inspeccionar el proyecto completo, diagnosticar compilaciones y proponer cambios (el usuario revisará el diff o confirmación antes de aplicar):
+- Usa get_compile_diagnostics para obtener todos los errores y advertencias parseados, fragmentos numerados del código fuente alrededor de cada error (sourceSnippet), alertas estructurales (integrity: archivo principal incorrecto, rutas con mayúsculas/minúsculas distintas o archivos faltantes), motor sugerido y cola del .log completo
+- Usa search_project_files para buscar comandos, paquetes, etiquetas o rutas de imágenes/archivos en TODOS los archivos de texto del proyecto (.tex, .bib, .sty, .cls)
+- Usa read_project_file para leer cualquier archivo del proyecto (con soporte opcional de startLine y endLine y salida numerada)
+- Usa set_latex_compiler para proponer cambiar el motor de compilación (pdflatex, lualatex o xelatex) y recompilar, por ejemplo cuando fontspec, unicode-math o \\babelfont requieran xelatex o lualatex
+- Usa set_main_file para proponer cambiar el archivo principal (.tex que contiene \\documentclass) cuando un proyecto importado en .zip apuntó a un capítulo o archivo equivocado
 - Usa find_and_replace para proponer buscar y reemplazar un fragmento exacto en el archivo activo o en otro archivo indicando filePath
+- Usa rewrite_project_file cuando necesites corregir múltiples líneas dispersas o reestructurar un archivo completo indicando filePath
 - Usa insert_latex para proponer insertar código en la posición del cursor del archivo activo
 - Usa replace_selection para proponer reemplazar el texto seleccionado (solo cuando el usuario haya seleccionado texto)
 - Usa create_project_file para proponer crear un archivo nuevo en el proyecto (por ejemplo referencias.bib o secciones/capitulo1.tex)
-- Usa compile_project cuando el usuario ya haya aprobado tus cambios y necesites verificar si el documento compila o detectar errores restantes
+- Usa compile_project cuando necesites recompilar el proyecto para verificar si ya genera PDF o identificar errores restantes
 
-Para corregir errores de compilación:
-1. Analiza el estado de compilación en el contexto o llama a get_compile_diagnostics si necesitas el log completo.
-2. Si el problema es de motor incompatible (como fontspec con pdflatex), prioriza proponer set_latex_compiler antes que reescribir el preámbulo innecesariamente.
-3. Si el error está en otro archivo (.tex o .bib), léelo primero con read_project_file y corrígelo con find_and_replace indicando filePath.
-4. Nunca afirmes que un cambio ya quedó aplicado hasta que la herramienta devuelva el resultado de aprobación del usuario.
+Flujo recomendado para corregir errores de compilación (especialmente en proyectos importados en .zip):
+1. Llama primero a get_compile_diagnostics si necesitas el panorama completo (errores, fragmentos fuente, integrity y log).
+2. Revisa integrity.wrongMainFileCandidate: si el archivo principal no tiene \\documentclass, propón set_main_file.
+3. Revisa si el error indica motor incompatible (ej. fontspec con pdflatex): propón set_latex_compiler antes de reescribir el preámbulo.
+4. Revisa integrity.caseMismatchedPaths: como el compilador corre en Linux (sensible a mayúsculas/minúsculas), corrige con find_and_replace las rutas para que coincidan exactamente con los archivos del proyecto.
+5. Si falta un archivo o comando en varios archivos, usa search_project_files y read_project_file con líneas antes de editar. Si find_and_replace falla o hay varios cambios en un archivo, usa rewrite_project_file.
+6. Nunca afirmes que un cambio ya quedó aplicado hasta que la herramienta devuelva el resultado de aprobación del usuario.
 
 Tareas frecuentes en las que ayudas:
 - Redacción de ecuaciones matemáticas y transcripción desde imágenes
@@ -97,7 +102,7 @@ export async function POST(req: Request) {
     model: google(modelName),
     system: fullSystemPrompt,
     messages: await convertToModelMessages(messages),
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(20),
     maxRetries: 1,
     tools: frontendTools(tools) as unknown as ToolSet,
     ...(THINKING_LOW_MODELS.has(modelName) && {

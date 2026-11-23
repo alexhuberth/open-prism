@@ -13,6 +13,7 @@ import {
   SHOWCASE_TEX_CONTENT,
   type ProjectTemplateId,
 } from "@/lib/project-templates";
+import { deleteProjectChatMessages } from "@/lib/project-chat-storage";
 import {
   indexedDBStorage,
   loadProjectPdf,
@@ -36,7 +37,8 @@ export interface PendingProposal {
     | "insert_latex"
     | "replace_selection"
     | "find_and_replace"
-    | "create_project_file";
+    | "create_project_file"
+    | "rewrite_project_file";
   fileId: string;
   fileName: string;
   beforeContent: string;
@@ -87,11 +89,13 @@ interface DocumentState {
   hydrated: boolean;
   initialized: boolean;
   chatError: string | null;
+  chatSessionVersion: number;
   pendingProposals: Record<string, PendingProposal>;
 
   setHydrated: (hydrated: boolean) => void;
 
   setChatError: (error: string | null) => void;
+  resetActiveProjectChat: () => void;
   registerPendingProposal: (proposal: PendingProposal) => void;
   unregisterPendingProposal: (toolCallId: string) => void;
   clearPendingProposals: () => void;
@@ -258,6 +262,7 @@ export const useDocumentStore = create<DocumentState>()(
       hydrated: false,
       initialized: false,
       chatError: null,
+      chatSessionVersion: 0,
       pendingProposals: {},
 
       setHydrated: (hydrated) => set({ hydrated }),
@@ -266,6 +271,18 @@ export const useDocumentStore = create<DocumentState>()(
         if (get().chatError !== chatError) {
           set({ chatError });
         }
+      },
+
+      resetActiveProjectChat: () => {
+        const activeId = get().activeProjectId;
+        if (activeId) {
+          deleteProjectChatMessages(activeId);
+        }
+        set((state) => ({
+          chatError: null,
+          pendingProposals: {},
+          chatSessionVersion: state.chatSessionVersion + 1,
+        }));
       },
 
       registerPendingProposal: (proposal) =>
@@ -361,6 +378,7 @@ export const useDocumentStore = create<DocumentState>()(
           selectionRange: null,
           pdfData: null,
           ...RESET_COMPILE_DIAGNOSTICS,
+          chatError: null,
           pendingProposals: {},
           initialized: templateId === "showcase" ? false : state.initialized,
         }));
@@ -390,6 +408,7 @@ export const useDocumentStore = create<DocumentState>()(
           selectionRange: null,
           pdfData: null,
           ...RESET_COMPILE_DIAGNOSTICS,
+          chatError: null,
           pendingProposals: {},
         });
 
@@ -476,6 +495,7 @@ export const useDocumentStore = create<DocumentState>()(
             remaining[0]);
 
         saveProjectPdf(projectId, null).catch(() => {});
+        deleteProjectChatMessages(projectId);
 
         const nextActiveFile =
           nextActive.files.find((f) => f.id === nextActive.activeFileId) ??
@@ -495,7 +515,9 @@ export const useDocumentStore = create<DocumentState>()(
                 cursorPosition: 0,
                 selectionRange: null,
                 pdfData: null,
-                compileError: null,
+                ...RESET_COMPILE_DIAGNOSTICS,
+                chatError: null,
+                pendingProposals: {},
               }
             : {}),
         });

@@ -37,9 +37,18 @@ const TEXT_EXTENSIONS = new Set([
   "sty",
   "cls",
   "bst",
+  "bbx",
+  "cbx",
+  "lbx",
+  "dtx",
+  "ins",
+  "tikz",
+  "ist",
   "txt",
   "md",
   "csv",
+  "tsv",
+  "dat",
   "json",
   "cfg",
   "def",
@@ -50,10 +59,13 @@ const IMAGE_EXTENSIONS = new Set([
   "png",
   "jpg",
   "jpeg",
+  "jfif",
   "gif",
   "webp",
   "svg",
   "bmp",
+  "tif",
+  "tiff",
 ]);
 
 const BINARY_EXTENSIONS = new Set([
@@ -193,16 +205,33 @@ export function detectMainTexFileName(
   const texFiles = files.filter((f) => isTexFile(f));
   if (texFiles.length === 0) return undefined;
 
-  const preferredNames = ["main.tex", "document.tex", "index.tex"];
+  const preferredNames = [
+    "main.tex",
+    "document.tex",
+    "index.tex",
+    "thesis.tex",
+    "tesis.tex",
+    "paper.tex",
+  ];
+  const withDocClass = texFiles.filter((f) =>
+    /\\documentclass\b/.test(f.content ?? ""),
+  );
+
+  for (const preferred of preferredNames) {
+    const exact = withDocClass.find((f) => f.name.toLowerCase() === preferred);
+    if (exact) return exact.name;
+  }
+
+  const rootWithDocClass = withDocClass.find((f) => !f.name.includes("/"));
+  if (rootWithDocClass) return rootWithDocClass.name;
+  if (withDocClass.length > 0) return withDocClass[0].name;
+
   for (const preferred of preferredNames) {
     const exact = texFiles.find((f) => f.name.toLowerCase() === preferred);
     if (exact) return exact.name;
   }
 
-  const withDocClass = texFiles.find((f) =>
-    f.content?.includes("\\documentclass"),
-  );
-  return withDocClass?.name ?? texFiles[0].name;
+  return texFiles[0].name;
 }
 
 export async function importZipArchive(
@@ -222,7 +251,7 @@ export async function importZipArchive(
     if (!fileType) continue;
 
     if (fileType === "tex" || fileType === "text") {
-      const content = await entry.async("string");
+      const content = (await entry.async("string")).replace(/\r\n?/g, "\n");
       collected.push({
         path: normalized,
         file: { name: normalized, type: fileType, content },
@@ -258,7 +287,7 @@ async function readBrowserFile(
   if (!fileType) return null;
 
   if (fileType === "tex" || fileType === "text") {
-    const content = await file.text();
+    const content = (await file.text()).replace(/\r\n?/g, "\n");
     return {
       path: normalized,
       file: { name: normalized, type: fileType, content },

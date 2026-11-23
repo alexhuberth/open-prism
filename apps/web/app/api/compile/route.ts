@@ -237,9 +237,9 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error: `Error de compilación: ${errorData.error || "Error desconocido"}`,
-          details: errorLines || logContent.slice(-1000),
+          details: errorLines || logContent.slice(-1500),
           buildId: errorData.buildId,
-          fullLog: logContent.slice(-40000),
+          fullLog: logContent.slice(-60000),
         },
         {
           status:

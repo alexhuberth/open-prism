@@ -26,6 +26,7 @@ import {
   MessageCircleIcon,
   PlusIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   SquareIcon,
 } from "lucide-react";
 import type { FC } from "react";
@@ -53,6 +54,12 @@ const DEFAULT_HEIGHT = 180;
 export function AIDrawer() {
   useDocumentContext();
   const threadRuntime = useThreadRuntime();
+  const projects = useDocumentStore((s) => s.projects);
+  const activeProjectId = useDocumentStore((s) => s.activeProjectId);
+  const resetActiveProjectChat = useDocumentStore(
+    (s) => s.resetActiveProjectChat,
+  );
+  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const [isOpen, setIsOpen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
@@ -156,6 +163,23 @@ export function AIDrawer() {
         >
           <div className="h-1 w-10 rounded-full bg-muted-foreground/30 transition-all group-hover:w-8" />
           <ChevronDownIcon className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        </div>
+
+        <div className="flex items-center justify-between border-border/60 border-b px-4 py-1 text-[11px] text-muted-foreground">
+          <span className="truncate font-medium">
+            Chat independiente · {activeProject?.name ?? "Proyecto"}
+          </span>
+          <AuiIf condition={({ thread }) => thread.messages.length > 0}>
+            <button
+              type="button"
+              onClick={() => resetActiveProjectChat()}
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Iniciar un nuevo chat limpio para este proyecto"
+            >
+              <RotateCcwIcon className="size-3" />
+              Nuevo chat
+            </button>
+          </AuiIf>
         </div>
 
         <ThreadMessages />

@@ -403,7 +403,11 @@ app.post("/builds/sync", async (c) => {
       cmd: string[],
       cwd = workDir,
       extraEnv?: Record<string, string>,
-    ): Promise<{ exitCode: number; timedOut: boolean }> => {
+    ): Promise<{
+      exitCode: number;
+      timedOut: boolean;
+      output: string;
+    }> => {
       return new Promise((resolve) => {
         const [command, ...args] = cmd;
         const proc = spawn(command, args, {
@@ -411,6 +415,9 @@ app.post("/builds/sync", async (c) => {
           env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });
+        const chunks: Buffer[] = [];
+        proc.stdout?.on("data", (d: Buffer) => chunks.push(d));
+        proc.stderr?.on("data", (d: Buffer) => chunks.push(d));
         let timedOut = false;
         const timeout = setTimeout(() => {
           timedOut = true;
@@ -418,29 +425,38 @@ app.post("/builds/sync", async (c) => {
         }, COMPILE_TIMEOUT_MS);
         proc.on("close", (code) => {
           clearTimeout(timeout);
-          resolve({ exitCode: code ?? 1, timedOut });
+          resolve({
+            exitCode: code ?? 1,
+            timedOut,
+            output: Buffer.concat(chunks).toString("utf-8"),
+          });
         });
-        proc.on("error", () => {
+        proc.on("error", (err) => {
           clearTimeout(timeout);
-          resolve({ exitCode: 1, timedOut: false });
+          resolve({
+            exitCode: 1,
+            timedOut: false,
+            output: err instanceof Error ? err.message : String(err),
+          });
         });
       });
     };
 
-    const latexCmd =
-      mainDirRel === "."
-        ? [compilerCmd, "-synctex=1", "-interaction=nonstopmode", mainPath]
-        : [
-            compilerCmd,
-            "-synctex=1",
-            "-interaction=nonstopmode",
-            "-output-directory",
-            outDir,
-            mainPath,
-          ];
+    const texEnv: Record<string, string> = {
+      TEXINPUTS: `${outDir}//:${workDir}//:`,
+      BIBINPUTS: `${outDir}//:${workDir}//:`,
+      BSTINPUTS: `${outDir}//:${workDir}//:`,
+    };
+    const mainFileArg = basename(mainPath);
+    const latexCmd = [
+      compilerCmd,
+      "-synctex=1",
+      "-interaction=nonstopmode",
+      mainFileArg,
+    ];
 
     // Pass 1
-    const pass1 = await runWithTimeout(latexCmd);
+    const pass1 = await runWithTimeout(latexCmd, outDir, texEnv);
     if (pass1.timedOut) {
       return c.json(
         { error: "Compilation timed out", buildId } satisfies CompileError,
@@ -452,6 +468,7 @@ app.post("/builds/sync", async (c) => {
     const auxPath = join(outDir, `${mainBaseName}.aux`);
     const idxPath = join(outDir, `${mainBaseName}.idx`);
     const logPath = join(outDir, `${mainBaseName}.log`);
+    const blgPath = join(outDir, `${mainBaseName}.blg`);
 
     const [bcfExists, auxExists, idxExists] = await Promise.all([
       access(bcfPath)
@@ -466,27 +483,38 @@ app.post("/builds/sync", async (c) => {
     ]);
 
     let ranAuxTool = false;
+    let auxOutput = "";
 
     if (bcfExists) {
-      const biberRes = await runWithTimeout(["biber", mainBaseName], outDir, {
-        BIBINPUTS: `${workDir}:${outDir}:`,
-      });
+      const biberRes = await runWithTimeout(
+        ["biber", mainBaseName],
+        outDir,
+        texEnv,
+      );
       if (biberRes.timedOut) {
         return c.json(
           { error: "Biber timed out", buildId } satisfies CompileError,
           500,
         );
       }
+      if (biberRes.exitCode !== 0 && biberRes.output) {
+        auxOutput += `\n[biber]\n${biberRes.output}`;
+      }
       ranAuxTool = true;
     } else if (hasBib && auxExists) {
-      const bibRes = await runWithTimeout(["bibtex", mainBaseName], outDir, {
-        BIBINPUTS: `${workDir}:${outDir}:`,
-      });
+      const bibRes = await runWithTimeout(
+        ["bibtex", mainBaseName],
+        outDir,
+        texEnv,
+      );
       if (bibRes.timedOut) {
         return c.json(
           { error: "BibTeX timed out", buildId } satisfies CompileError,
           500,
         );
+      }
+      if (bibRes.exitCode !== 0 && bibRes.output) {
+        auxOutput += `\n[bibtex]\n${bibRes.output}`;
       }
       ranAuxTool = true;
     }
@@ -495,6 +523,7 @@ app.post("/builds/sync", async (c) => {
       const idxRes = await runWithTimeout(
         ["makeindex", `${mainBaseName}.idx`],
         outDir,
+        texEnv,
       );
       if (idxRes.timedOut) {
         return c.json(
@@ -506,7 +535,7 @@ app.post("/builds/sync", async (c) => {
     }
 
     // Pass 2 (always resolves TOC, figures/tables lists, cross-references, and bibliography)
-    const pass2 = await runWithTimeout(latexCmd);
+    const pass2 = await runWithTimeout(latexCmd, outDir, texEnv);
     if (pass2.timedOut) {
       return c.json(
         { error: "Compilation timed out", buildId } satisfies CompileError,
@@ -520,22 +549,48 @@ app.post("/builds/sync", async (c) => {
     } catch {}
 
     // Pass 3 when bibliography/index ran or LaTeX explicitly requests rerun (page numbers / labels)
+    let lastLatexPass = pass2;
     if (
       ranAuxTool ||
       /Rerun to get (?:cross-references|outline|citations) right|Please \(re\)run/i.test(
         logContent,
       )
     ) {
-      const pass3 = await runWithTimeout(latexCmd);
+      const pass3 = await runWithTimeout(latexCmd, outDir, texEnv);
       if (pass3.timedOut) {
         return c.json(
           { error: "Compilation timed out", buildId } satisfies CompileError,
           500,
         );
       }
+      lastLatexPass = pass3;
       try {
         logContent = await readFile(logPath, "utf-8");
       } catch {}
+    }
+
+    if (!logContent && lastLatexPass.output) {
+      logContent = lastLatexPass.output;
+    } else if (!logContent && pass1.output) {
+      logContent = pass1.output;
+    }
+
+    if (ranAuxTool) {
+      try {
+        const blgContent = await readFile(blgPath, "utf-8");
+        const bibErrors = blgContent
+          .split("\n")
+          .filter((l) => /ERROR|WARN|I couldn't|I found no/i.test(l))
+          .slice(0, 20)
+          .join("\n");
+        if (bibErrors) {
+          logContent = `${logContent}\n\n--- Bibliografía (.blg) ---\n${bibErrors}`;
+        }
+      } catch {}
+    }
+
+    if (auxOutput) {
+      logContent = `${logContent}\n${auxOutput}`;
     }
 
     const pdfPath = join(outDir, `${mainBaseName}.pdf`);
