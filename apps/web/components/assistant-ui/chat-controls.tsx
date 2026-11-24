@@ -7,7 +7,14 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
 } from "@assistant-ui/react";
-import { AlertCircleIcon, ImageIcon, ImagePlusIcon, XIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  ImageIcon,
+  ImagePlusIcon,
+  ShieldCheckIcon,
+  XIcon,
+  ZapIcon,
+} from "lucide-react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
   Select,
@@ -94,6 +101,40 @@ export const GeminiModelSelector: FC = () => {
         <SelectItem value="gemini-4-carbon">Gemini 4 Carbon</SelectItem>
       </SelectContent>
     </Select>
+  );
+};
+
+export const AiAutonomousToggle: FC = () => {
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
+  const setAiAutonomousMode = useDocumentStore((s) => s.setAiAutonomousMode);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAiAutonomousMode(!aiAutonomousMode)}
+      title={
+        aiAutonomousMode
+          ? "Modo autónomo activo: la IA crea, edita, renombra, elimina archivos y compila automáticamente"
+          : "Modo con confirmación: la IA espera tu aprobación en cada cambio"
+      }
+      className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 font-medium text-xs transition-colors ${
+        aiAutonomousMode
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+          : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      {aiAutonomousMode ? (
+        <>
+          <ZapIcon className="size-3.5" />
+          <span>Autónomo</span>
+        </>
+      ) : (
+        <>
+          <ShieldCheckIcon className="size-3.5" />
+          <span>Confirmar</span>
+        </>
+      )}
+    </button>
   );
 };
 

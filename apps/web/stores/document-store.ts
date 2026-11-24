@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { LatexCompiler } from "@/lib/latex-compiler";
 import {
+  classifyFileName,
   detectMainTexFileName,
   isTextFile,
   isTexFile,
@@ -60,6 +61,7 @@ interface DocumentState {
   activeProjectId: string;
   projectSort: ProjectSortOrder;
   aiModel: GeminiModelId;
+  aiAutonomousMode: boolean;
   files: ProjectFile[];
   activeFileId: string;
   mainFileId: string;
@@ -108,6 +110,7 @@ interface DocumentState {
   togglePinProject: (projectId: string) => void;
   setProjectSort: (sort: ProjectSortOrder) => void;
   setAiModel: (model: GeminiModelId) => void;
+  setAiAutonomousMode: (enabled: boolean) => void;
   setProjectCompiler: (compiler: LatexCompiler) => void;
   setMainFile: (fileId: string) => void;
 
@@ -123,6 +126,7 @@ interface DocumentState {
   deleteFile: (id: string) => void;
   deleteFolder: (folderPath: string) => void;
   renameFile: (id: string, name: string) => void;
+  renameFolder: (oldFolderPath: string, newFolderPath: string) => void;
   updateFileContent: (id: string, content: string) => void;
   setCursorPosition: (position: number) => void;
   setSelectionRange: (range: { start: number; end: number } | null) => void;
@@ -240,6 +244,7 @@ export const useDocumentStore = create<DocumentState>()(
       activeProjectId: initialProject.id,
       projectSort: "updatedAt",
       aiModel: "gemini-4-hydrogen",
+      aiAutonomousMode: true,
       files: initialProject.files,
       activeFileId: initialProject.activeFileId,
       mainFileId: initialProject.mainFileId,
@@ -545,6 +550,8 @@ export const useDocumentStore = create<DocumentState>()(
 
       setAiModel: (aiModel) => set({ aiModel }),
 
+      setAiAutonomousMode: (aiAutonomousMode) => set({ aiAutonomousMode }),
+
       setProjectCompiler: (compiler) => {
         set((state) =>
           updateActiveProject(state, (p) => ({
@@ -733,13 +740,68 @@ export const useDocumentStore = create<DocumentState>()(
         const normalized = normalizeRelativePath(name);
         if (!normalized) return;
         set((state) =>
-          updateActiveProject(state, (p) => ({
-            ...p,
-            updatedAt: Date.now(),
-            files: p.files.map((f) =>
-              f.id === id ? { ...f, name: normalized } : f,
-            ),
-          })),
+          updateActiveProject(state, (p) => {
+            const collision = p.files.some(
+              (f) => f.id !== id && f.name === normalized,
+            );
+            if (collision) return p;
+            const inferredType = classifyFileName(normalized);
+            return {
+              ...p,
+              updatedAt: Date.now(),
+              files: p.files.map((f) => {
+                if (f.id !== id) return f;
+                const nextType =
+                  inferredType &&
+                  isTextFile(f) &&
+                  (inferredType === "tex" || inferredType === "text")
+                    ? inferredType
+                    : f.type;
+                return { ...f, name: normalized, type: nextType };
+              }),
+            };
+          }),
+        );
+      },
+
+      renameFolder: (oldFolderPath, newFolderPath) => {
+        const cleanOld = normalizeRelativePath(oldFolderPath)?.replace(
+          /\/+$/,
+          "",
+        );
+        if (!cleanOld) return;
+        const cleanNew = newFolderPath.trim()
+          ? (normalizeRelativePath(newFolderPath)?.replace(/\/+$/, "") ?? "")
+          : "";
+        const oldPrefix = `${cleanOld}/`;
+
+        set((state) =>
+          updateActiveProject(state, (p) => {
+            let changed = false;
+            const mapped = p.files.map((f) => {
+              if (!f.name.startsWith(oldPrefix)) return f;
+              const suffix = f.name.slice(oldPrefix.length);
+              const targetName = cleanNew ? `${cleanNew}/${suffix}` : suffix;
+              const normalized = normalizeRelativePath(targetName);
+              if (!normalized) return f;
+              changed = true;
+              return { ...f, name: normalized };
+            });
+
+            if (!changed) return p;
+
+            const seen = new Set<string>();
+            for (const f of mapped) {
+              if (seen.has(f.name)) return p;
+              seen.add(f.name);
+            }
+
+            return {
+              ...p,
+              updatedAt: Date.now(),
+              files: mapped,
+            };
+          }),
         );
       },
 
@@ -949,6 +1011,7 @@ export const useDocumentStore = create<DocumentState>()(
         activeProjectId: state.activeProjectId,
         projectSort: state.projectSort,
         aiModel: state.aiModel,
+        aiAutonomousMode: state.aiAutonomousMode,
       }),
       merge: (persisted, current) => {
         const data = persisted as Partial<DocumentState> | undefined;
@@ -994,6 +1057,7 @@ export const useDocumentStore = create<DocumentState>()(
           activeProjectId: activeProject.id,
           projectSort: data.projectSort ?? "updatedAt",
           aiModel: data.aiModel ?? "gemini-4-hydrogen",
+          aiAutonomousMode: data.aiAutonomousMode ?? true,
           files: activeProject.files,
           activeFileId,
           mainFileId,

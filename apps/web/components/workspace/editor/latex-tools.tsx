@@ -21,13 +21,17 @@ import {
   FileCodeIcon,
   FilePlus2Icon,
   FileSearchIcon,
+  FolderInputIcon,
+  FolderTreeIcon,
   GitCompareIcon,
   LoaderIcon,
+  PencilLineIcon,
   PlayIcon,
   PlusIcon,
   ReplaceIcon,
   ScrollTextIcon,
   SearchIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { z } from "zod";
@@ -242,6 +246,7 @@ const ProposalDiffCard: FC<ProposalCardProps> = ({
   const [expandOpen, setExpandOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<ProposalSnapshot | null>(null);
   const autoReportedRef = useRef(false);
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
 
   const isWaitingAction = result == null && statusType === "requires-action";
 
@@ -281,7 +286,7 @@ const ProposalDiffCard: FC<ProposalCardProps> = ({
       unregisterPendingProposal(toolCallId);
       aui.part().addToolResult({
         success: true,
-        message: "Cambio aprobado y aplicado por el usuario",
+        message: "Cambio aplicado al proyecto",
       });
       if (andCompile) {
         compileActiveProject();
@@ -297,6 +302,19 @@ const ProposalDiffCard: FC<ProposalCardProps> = ({
     ],
   );
 
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      isWaitingAction &&
+      snapshot &&
+      !snapshot.validationError &&
+      !autoReportedRef.current
+    ) {
+      autoReportedRef.current = true;
+      handleApprove(false);
+    }
+  }, [aiAutonomousMode, isWaitingAction, snapshot, handleApprove]);
+
   const handleReject = useCallback(() => {
     unregisterPendingProposal(toolCallId);
     aui.part().addToolResult({
@@ -307,7 +325,12 @@ const ProposalDiffCard: FC<ProposalCardProps> = ({
   }, [unregisterPendingProposal, toolCallId, aui]);
 
   useEffect(() => {
-    if (!isWaitingAction || !snapshot || snapshot.validationError) {
+    if (
+      !isWaitingAction ||
+      !snapshot ||
+      snapshot.validationError ||
+      aiAutonomousMode
+    ) {
       unregisterPendingProposal(toolCallId);
       return;
     }
@@ -364,7 +387,7 @@ const ProposalDiffCard: FC<ProposalCardProps> = ({
             ? "Cambio rechazado"
             : isError
               ? (result.error ?? "No se pudo aplicar el cambio")
-              : completedLabel}
+              : `${completedLabel}${args.filePath ? ` (${args.filePath})` : ""}`}
         </span>
       </div>
     );
@@ -989,6 +1012,75 @@ interface CompilerToolResult extends ToolResult {
   warningCount?: number;
 }
 
+interface ActionConfirmCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description?: string;
+  rejectLabel: string;
+  confirmLabel: string;
+  onReject: () => void;
+  onConfirm: () => void;
+  applying: boolean;
+  statusType: string;
+}
+
+function ActionConfirmCard({
+  icon,
+  title,
+  description,
+  rejectLabel,
+  confirmLabel,
+  onReject,
+  onConfirm,
+  applying,
+  statusType,
+}: ActionConfirmCardProps) {
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-border border-b bg-muted/50 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {icon}
+          <span className="truncate font-medium text-foreground text-xs">
+            {title}
+          </span>
+        </div>
+        {(applying || statusType === "running") && (
+          <LoaderIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        )}
+      </div>
+      {description && (
+        <p className="px-3 py-2 text-muted-foreground text-xs">{description}</p>
+      )}
+      <div className="flex items-center justify-end gap-1.5 border-border border-t bg-muted/20 px-3 py-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          onClick={onReject}
+          disabled={applying || statusType === "running"}
+        >
+          {rejectLabel}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 gap-1 px-2.5 text-xs"
+          onClick={onConfirm}
+          disabled={applying || statusType === "running"}
+        >
+          {applying ? (
+            <LoaderIcon className="size-3 animate-spin" />
+          ) : (
+            <PlayIcon className="size-3" />
+          )}
+          {confirmLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SetLatexCompilerRender({
   args,
   result,
@@ -999,7 +1091,9 @@ function SetLatexCompilerRender({
 >) {
   const aui = useAui();
   const currentCompiler = useDocumentStore((s) => s.compiler);
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
   const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
 
   const handleReject = () => {
     aui.part().addToolResult({
@@ -1010,7 +1104,7 @@ function SetLatexCompilerRender({
     });
   };
 
-  const handleApplyAndCompile = async () => {
+  const handleApplyAndCompile = useCallback(async () => {
     setApplying(true);
     try {
       const store = useDocumentStore.getState();
@@ -1030,7 +1124,19 @@ function SetLatexCompilerRender({
     } finally {
       setApplying(false);
     }
-  };
+  }, [args.compiler, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      void handleApplyAndCompile();
+    }
+  }, [aiAutonomousMode, result, status.type, handleApplyAndCompile]);
 
   if (result != null) {
     const isRejected = result.rejected === true;
@@ -1051,48 +1157,17 @@ function SetLatexCompilerRender({
   }
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between gap-2 border-border border-b bg-muted/50 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <CpuIcon className="size-4 text-primary" />
-          <span className="font-medium text-foreground text-xs">
-            Cambiar motor LaTeX: {currentCompiler} → {args.compiler}
-          </span>
-        </div>
-        {status.type === "running" && (
-          <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
-        )}
-      </div>
-      {args.reason && (
-        <p className="px-3 py-2 text-muted-foreground text-xs">{args.reason}</p>
-      )}
-      <div className="flex items-center justify-end gap-1.5 border-border border-t bg-muted/20 px-3 py-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 px-2.5 text-xs"
-          onClick={handleReject}
-          disabled={applying || status.type === "running"}
-        >
-          Mantener {currentCompiler}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-7 gap-1 px-2.5 text-xs"
-          onClick={handleApplyAndCompile}
-          disabled={applying || status.type === "running"}
-        >
-          {applying ? (
-            <LoaderIcon className="size-3 animate-spin" />
-          ) : (
-            <PlayIcon className="size-3" />
-          )}
-          Usar {args.compiler} y compilar
-        </Button>
-      </div>
-    </div>
+    <ActionConfirmCard
+      icon={<CpuIcon className="size-4 shrink-0 text-primary" />}
+      title={`Cambiar motor LaTeX: ${currentCompiler} → ${args.compiler}`}
+      description={args.reason}
+      rejectLabel={`Mantener ${currentCompiler}`}
+      confirmLabel={`Usar ${args.compiler} y compilar`}
+      onReject={handleReject}
+      onConfirm={handleApplyAndCompile}
+      applying={applying}
+      statusType={status.type}
+    />
   );
 }
 
@@ -1202,9 +1277,11 @@ function SetMainFileRender({
   const aui = useAui();
   const files = useDocumentStore((s) => s.files);
   const mainFileId = useDocumentStore((s) => s.mainFileId);
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
   const currentMain =
     files.find((f) => f.id === mainFileId)?.name ?? "main.tex";
   const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
 
   const handleReject = () => {
     aui.part().addToolResult({
@@ -1215,7 +1292,7 @@ function SetMainFileRender({
     });
   };
 
-  const handleApplyAndCompile = async () => {
+  const handleApplyAndCompile = useCallback(async () => {
     setApplying(true);
     try {
       const store = useDocumentStore.getState();
@@ -1246,7 +1323,19 @@ function SetMainFileRender({
     } finally {
       setApplying(false);
     }
-  };
+  }, [args.filePath, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      void handleApplyAndCompile();
+    }
+  }, [aiAutonomousMode, result, status.type, handleApplyAndCompile]);
 
   if (result != null) {
     return (
@@ -1268,48 +1357,17 @@ function SetMainFileRender({
   }
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between gap-2 border-border border-b bg-muted/50 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <FileCodeIcon className="size-4 text-primary" />
-          <span className="font-medium text-foreground text-xs">
-            Cambiar archivo principal: {currentMain} → {args.filePath}
-          </span>
-        </div>
-        {status.type === "running" && (
-          <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
-        )}
-      </div>
-      {args.reason && (
-        <p className="px-3 py-2 text-muted-foreground text-xs">{args.reason}</p>
-      )}
-      <div className="flex items-center justify-end gap-1.5 border-border border-t bg-muted/20 px-3 py-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 px-2.5 text-xs"
-          onClick={handleReject}
-          disabled={applying || status.type === "running"}
-        >
-          Mantener {currentMain}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-7 gap-1 px-2.5 text-xs"
-          onClick={handleApplyAndCompile}
-          disabled={applying || status.type === "running"}
-        >
-          {applying ? (
-            <LoaderIcon className="size-3 animate-spin" />
-          ) : (
-            <PlayIcon className="size-3" />
-          )}
-          Establecer y compilar
-        </Button>
-      </div>
-    </div>
+    <ActionConfirmCard
+      icon={<FileCodeIcon className="size-4 shrink-0 text-primary" />}
+      title={`Cambiar archivo principal: ${currentMain} → ${args.filePath}`}
+      description={args.reason}
+      rejectLabel={`Mantener ${currentMain}`}
+      confirmLabel="Establecer y compilar"
+      onReject={handleReject}
+      onConfirm={handleApplyAndCompile}
+      applying={applying}
+      statusType={status.type}
+    />
   );
 }
 
@@ -1332,7 +1390,544 @@ const SET_MAIN_FILE_TOOL = {
   render: SetMainFileRender,
 };
 
+interface ListProjectFilesResult extends ToolResult {
+  totalFiles?: number;
+  mainFile?: string;
+  activeFile?: string;
+  compiler?: LatexCompiler;
+  files?: Array<{
+    name: string;
+    type: ProjectFile["type"];
+    isMain: boolean;
+    isActive: boolean;
+    lineCount?: number;
+    sizeBytes: number;
+  }>;
+}
+
+function ListProjectFilesRender({
+  result,
+  status,
+}: ToolCallMessagePartProps<Record<string, never>, ListProjectFilesResult>) {
+  const isComplete = result != null || status.type === "complete";
+  return (
+    <div className="my-1.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs">
+      {isComplete ? (
+        <CheckIcon className="size-3.5 text-emerald-600" />
+      ) : (
+        <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+      )}
+      <FolderTreeIcon className="size-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">
+        {isComplete
+          ? `Archivos listados (${result?.totalFiles ?? 0} en el proyecto)`
+          : "Listando archivos del proyecto..."}
+      </span>
+    </div>
+  );
+}
+
+const LIST_PROJECT_FILES_TOOL = {
+  toolName: "list_project_files",
+  description:
+    "List all files currently in the project (including .tex, .bib, .sty, .cls, images, PDFs, and fonts) with exact paths, types, sizes, and main/active status",
+  parameters: z.object({}),
+  execute: async (): Promise<ListProjectFilesResult> => {
+    const state = useDocumentStore.getState();
+    const mainFile = state.files.find((f) => f.id === state.mainFileId);
+    const activeFile = state.files.find((f) => f.id === state.activeFileId);
+
+    return {
+      success: true,
+      totalFiles: state.files.length,
+      mainFile: mainFile?.name,
+      activeFile: activeFile?.name,
+      compiler: state.compiler,
+      files: state.files.map((f) => ({
+        name: f.name,
+        type: f.type,
+        isMain: f.id === state.mainFileId,
+        isActive: f.id === state.activeFileId,
+        ...(isTextFile(f) && f.content != null
+          ? {
+              lineCount: f.content.split("\n").length,
+              sizeBytes: f.content.length,
+            }
+          : {
+              sizeBytes: Math.round(((f.dataUrl?.length ?? 0) * 3) / 4),
+            }),
+      })),
+    };
+  },
+  render: ListProjectFilesRender,
+};
+
+function FileActionResultBanner({
+  icon,
+  result,
+  fallbackText,
+}: {
+  icon: React.ReactNode;
+  result: ToolResult;
+  fallbackText: string;
+}) {
+  const isRejected = result.rejected === true;
+  const isError = result.success === false && !isRejected;
+  return (
+    <div className="my-1.5 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs">
+      {isRejected ? (
+        <XIcon className="size-4 shrink-0 text-muted-foreground" />
+      ) : isError ? (
+        <span className="flex size-4 shrink-0 items-center justify-center font-bold text-amber-600">
+          !
+        </span>
+      ) : (
+        <CheckIcon className="size-4 shrink-0 text-emerald-600" />
+      )}
+      {icon}
+      <span className="text-muted-foreground">
+        {result.message || result.error || fallbackText}
+      </span>
+    </div>
+  );
+}
+
+function RenameProjectFileRender({
+  args,
+  result,
+  status,
+}: ToolCallMessagePartProps<{ oldPath: string; newPath: string }, ToolResult>) {
+  const aui = useAui();
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
+  const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
+
+  const handleReject = () => {
+    aui.part().addToolResult({
+      success: false,
+      rejected: true,
+      message: `Renombrado cancelado (${args.oldPath}).`,
+    });
+  };
+
+  const handleConfirm = useCallback(() => {
+    setApplying(true);
+    try {
+      const store = useDocumentStore.getState();
+      const normalizedOld = normalizeRelativePath(args.oldPath);
+      const normalizedNew = normalizeRelativePath(args.newPath);
+      if (!normalizedOld || !normalizedNew) {
+        aui.part().addToolResult({
+          success: false,
+          error: "Ruta origen o destino inválida.",
+        });
+        return;
+      }
+      const target = store.files.find((f) => f.name === normalizedOld);
+      if (!target) {
+        aui.part().addToolResult({
+          success: false,
+          error: `No se encontró el archivo "${args.oldPath}" en el proyecto.`,
+        });
+        return;
+      }
+      const collision = store.files.some(
+        (f) => f.id !== target.id && f.name === normalizedNew,
+      );
+      if (collision) {
+        aui.part().addToolResult({
+          success: false,
+          error: `Ya existe un archivo llamado "${normalizedNew}".`,
+        });
+        return;
+      }
+      store.renameFile(target.id, normalizedNew);
+      aui.part().addToolResult({
+        success: true,
+        message: `Archivo renombrado: ${normalizedOld} → ${normalizedNew}`,
+      });
+    } finally {
+      setApplying(false);
+    }
+  }, [args.oldPath, args.newPath, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      handleConfirm();
+    }
+  }, [aiAutonomousMode, result, status.type, handleConfirm]);
+
+  if (result != null) {
+    return (
+      <FileActionResultBanner
+        icon={
+          <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        }
+        result={result}
+        fallbackText={`${args.oldPath} → ${args.newPath}`}
+      />
+    );
+  }
+
+  return (
+    <ActionConfirmCard
+      icon={<PencilLineIcon className="size-4 shrink-0 text-primary" />}
+      title={`Renombrar / mover archivo: ${args.oldPath} → ${args.newPath}`}
+      rejectLabel="Cancelar"
+      confirmLabel="Renombrar"
+      onReject={handleReject}
+      onConfirm={handleConfirm}
+      applying={applying}
+      statusType={status.type}
+    />
+  );
+}
+
+const RENAME_PROJECT_FILE_TOOL = {
+  toolName: "rename_project_file",
+  description:
+    "Rename or move any file in the project (including .tex, .bib, .sty, .cls, images, PDFs, or fonts) — ideal for fixing wrong case, spaces, or subfolder paths",
+  parameters: z.object({
+    oldPath: z.string().describe("Current relative path of the file"),
+    newPath: z.string().describe("New relative path of the file"),
+  }),
+  render: RenameProjectFileRender,
+};
+
+function DeleteProjectFileRender({
+  args,
+  result,
+  status,
+}: ToolCallMessagePartProps<
+  { filePath: string; reason?: string },
+  ToolResult
+>) {
+  const aui = useAui();
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
+  const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
+
+  const handleReject = () => {
+    aui.part().addToolResult({
+      success: false,
+      rejected: true,
+      message: `Eliminación cancelada (${args.filePath}).`,
+    });
+  };
+
+  const handleConfirm = useCallback(() => {
+    setApplying(true);
+    try {
+      const store = useDocumentStore.getState();
+      if (store.files.length <= 1) {
+        aui.part().addToolResult({
+          success: false,
+          error: "No se puede eliminar el único archivo del proyecto.",
+        });
+        return;
+      }
+      const normalized = normalizeRelativePath(args.filePath);
+      const target = store.files.find(
+        (f) => f.name === (normalized ?? args.filePath),
+      );
+      if (!target) {
+        aui.part().addToolResult({
+          success: false,
+          error: `No se encontró el archivo "${args.filePath}".`,
+        });
+        return;
+      }
+      store.deleteFile(target.id);
+      aui.part().addToolResult({
+        success: true,
+        message: `Archivo eliminado: ${target.name}`,
+      });
+    } finally {
+      setApplying(false);
+    }
+  }, [args.filePath, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      handleConfirm();
+    }
+  }, [aiAutonomousMode, result, status.type, handleConfirm]);
+
+  if (result != null) {
+    return (
+      <FileActionResultBanner
+        icon={
+          <Trash2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        }
+        result={result}
+        fallbackText={`Eliminado: ${args.filePath}`}
+      />
+    );
+  }
+
+  return (
+    <ActionConfirmCard
+      icon={<Trash2Icon className="size-4 shrink-0 text-destructive" />}
+      title={`Eliminar archivo: ${args.filePath}`}
+      description={args.reason}
+      rejectLabel="Cancelar"
+      confirmLabel="Eliminar archivo"
+      onReject={handleReject}
+      onConfirm={handleConfirm}
+      applying={applying}
+      statusType={status.type}
+    />
+  );
+}
+
+const DELETE_PROJECT_FILE_TOOL = {
+  toolName: "delete_project_file",
+  description:
+    "Delete a specific file from the project (e.g., unused/conflicting/duplicate files)",
+  parameters: z.object({
+    filePath: z.string().describe("Relative path of the file to delete"),
+    reason: z
+      .string()
+      .optional()
+      .describe("Optional brief explanation in Spanish"),
+  }),
+  render: DeleteProjectFileRender,
+};
+
+function MoveProjectFolderRender({
+  args,
+  result,
+  status,
+}: ToolCallMessagePartProps<
+  { oldFolder: string; newFolder: string },
+  ToolResult
+>) {
+  const aui = useAui();
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
+  const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
+
+  const handleReject = () => {
+    aui.part().addToolResult({
+      success: false,
+      rejected: true,
+      message: `Movimiento de carpeta cancelado (${args.oldFolder}).`,
+    });
+  };
+
+  const handleConfirm = useCallback(() => {
+    setApplying(true);
+    try {
+      const store = useDocumentStore.getState();
+      const cleanOld = normalizeRelativePath(args.oldFolder)?.replace(
+        /\/+$/,
+        "",
+      );
+      if (!cleanOld) {
+        aui.part().addToolResult({
+          success: false,
+          error: "Carpeta origen inválida.",
+        });
+        return;
+      }
+      const prefix = `${cleanOld}/`;
+      const hasMatches = store.files.some((f) => f.name.startsWith(prefix));
+      if (!hasMatches) {
+        aui.part().addToolResult({
+          success: false,
+          error: `No existen archivos dentro de la carpeta "${cleanOld}".`,
+        });
+        return;
+      }
+      store.renameFolder(cleanOld, args.newFolder);
+      aui.part().addToolResult({
+        success: true,
+        message: args.newFolder
+          ? `Carpeta movida: ${cleanOld} → ${args.newFolder}`
+          : `Archivos movidos a la raíz desde ${cleanOld}`,
+      });
+    } finally {
+      setApplying(false);
+    }
+  }, [args.oldFolder, args.newFolder, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      handleConfirm();
+    }
+  }, [aiAutonomousMode, result, status.type, handleConfirm]);
+
+  if (result != null) {
+    return (
+      <FileActionResultBanner
+        icon={
+          <FolderInputIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        }
+        result={result}
+        fallbackText={`Carpeta: ${args.oldFolder} → ${args.newFolder || "/"}`}
+      />
+    );
+  }
+
+  return (
+    <ActionConfirmCard
+      icon={<FolderInputIcon className="size-4 shrink-0 text-primary" />}
+      title={`Mover carpeta: ${args.oldFolder} → ${args.newFolder || "raíz del proyecto"}`}
+      rejectLabel="Cancelar"
+      confirmLabel="Mover carpeta"
+      onReject={handleReject}
+      onConfirm={handleConfirm}
+      applying={applying}
+      statusType={status.type}
+    />
+  );
+}
+
+const MOVE_PROJECT_FOLDER_TOOL = {
+  toolName: "move_project_folder",
+  description:
+    'Move or rename an entire folder of files in the project (pass empty string newFolder "" to flatten a nested subfolder into the project root)',
+  parameters: z.object({
+    oldFolder: z.string().describe("Current folder path (e.g. 'wrapper')"),
+    newFolder: z
+      .string()
+      .describe('Target folder path, or empty string "" for project root'),
+  }),
+  render: MoveProjectFolderRender,
+};
+
+function DeleteProjectFolderRender({
+  args,
+  result,
+  status,
+}: ToolCallMessagePartProps<
+  { folderPath: string; reason?: string },
+  ToolResult
+>) {
+  const aui = useAui();
+  const aiAutonomousMode = useDocumentStore((s) => s.aiAutonomousMode);
+  const [applying, setApplying] = useState(false);
+  const autoRanRef = useRef(false);
+
+  const handleReject = () => {
+    aui.part().addToolResult({
+      success: false,
+      rejected: true,
+      message: `Eliminación de carpeta cancelada (${args.folderPath}).`,
+    });
+  };
+
+  const handleConfirm = useCallback(() => {
+    setApplying(true);
+    try {
+      const store = useDocumentStore.getState();
+      const clean = normalizeRelativePath(args.folderPath)?.replace(/\/+$/, "");
+      if (!clean) {
+        aui.part().addToolResult({
+          success: false,
+          error: "Ruta de carpeta inválida.",
+        });
+        return;
+      }
+      const prefix = `${clean}/`;
+      const remaining = store.files.filter((f) => !f.name.startsWith(prefix));
+      if (remaining.length === store.files.length) {
+        aui.part().addToolResult({
+          success: false,
+          error: `No existen archivos dentro de "${clean}".`,
+        });
+        return;
+      }
+      if (remaining.length === 0) {
+        aui.part().addToolResult({
+          success: false,
+          error:
+            "No se puede eliminar la carpeta porque dejaría el proyecto vacío.",
+        });
+        return;
+      }
+      store.deleteFolder(clean);
+      aui.part().addToolResult({
+        success: true,
+        message: `Carpeta eliminada: ${clean}`,
+      });
+    } finally {
+      setApplying(false);
+    }
+  }, [args.folderPath, aui]);
+
+  useEffect(() => {
+    if (
+      aiAutonomousMode &&
+      result == null &&
+      status.type === "requires-action" &&
+      !autoRanRef.current
+    ) {
+      autoRanRef.current = true;
+      handleConfirm();
+    }
+  }, [aiAutonomousMode, result, status.type, handleConfirm]);
+
+  if (result != null) {
+    return (
+      <FileActionResultBanner
+        icon={
+          <Trash2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        }
+        result={result}
+        fallbackText={`Carpeta eliminada: ${args.folderPath}`}
+      />
+    );
+  }
+
+  return (
+    <ActionConfirmCard
+      icon={<Trash2Icon className="size-4 shrink-0 text-destructive" />}
+      title={`Eliminar carpeta: ${args.folderPath}`}
+      description={args.reason}
+      rejectLabel="Cancelar"
+      confirmLabel="Eliminar carpeta"
+      onReject={handleReject}
+      onConfirm={handleConfirm}
+      applying={applying}
+      statusType={status.type}
+    />
+  );
+}
+
+const DELETE_PROJECT_FOLDER_TOOL = {
+  toolName: "delete_project_folder",
+  description: "Delete an entire folder and all files inside it",
+  parameters: z.object({
+    folderPath: z.string().describe("Relative path of the folder to delete"),
+    reason: z
+      .string()
+      .optional()
+      .describe("Optional brief explanation in Spanish"),
+  }),
+  render: DeleteProjectFolderRender,
+};
+
 export const LatexTools: FC = memo(function LatexTools() {
+  useAssistantTool(LIST_PROJECT_FILES_TOOL);
   useAssistantTool(READ_PROJECT_FILE_TOOL);
   useAssistantTool(SEARCH_PROJECT_FILES_TOOL);
   useAssistantTool(GET_COMPILE_DIAGNOSTICS_TOOL);
@@ -1344,6 +1939,10 @@ export const LatexTools: FC = memo(function LatexTools() {
   useAssistantTool(FIND_AND_REPLACE_TOOL);
   useAssistantTool(REWRITE_PROJECT_FILE_TOOL);
   useAssistantTool(CREATE_PROJECT_FILE_TOOL);
+  useAssistantTool(RENAME_PROJECT_FILE_TOOL);
+  useAssistantTool(DELETE_PROJECT_FILE_TOOL);
+  useAssistantTool(MOVE_PROJECT_FOLDER_TOOL);
+  useAssistantTool(DELETE_PROJECT_FOLDER_TOOL);
 
   return null;
 });

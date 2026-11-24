@@ -37,6 +37,7 @@ import "katex/dist/katex.min.css";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
+  AiAutonomousToggle,
   AssistantErrorNotice,
   AttachImageButton,
   ComposerAttachmentPill,
@@ -257,6 +258,7 @@ const Composer: FC = () => {
           <div className="flex items-center gap-1">
             <AttachImageButton side="top" />
             <GeminiModelSelector />
+            <AiAutonomousToggle />
           </div>
           <ComposerAction />
         </div>
