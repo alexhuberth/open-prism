@@ -3,14 +3,7 @@ FROM node:26.13.0-slim AS base
 RUN npm install -g corepack@0.36.0 && corepack enable pnpm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    texlive \
-    texlive-latex-extra \
-    texlive-pictures \
-    texlive-fonts-recommended \
-    texlive-science \
-    texlive-xetex \
-    texlive-lang-spanish \
-    texlive-bibtex-extra \
+    texlive-full \
     biber \
     && rm -rf /var/lib/apt/lists/*
 
