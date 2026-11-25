@@ -368,14 +368,14 @@ export function buildFixPromptForDiagnostics(params: {
   } = params;
 
   const formattedItems = diagnostics
-    .slice(0, 8)
+    .slice(0, 5)
     .map((item, index) => {
       const location = item.file
         ? item.line
           ? `${item.file}:${item.line}`
           : item.file
         : (mainFileName ?? "documento");
-      return `${index + 1}. [${item.severity.toUpperCase()}] ${item.title}\n   Ubicación: ${location}\n\`\`\`\n${item.excerpt.slice(0, 600)}\n\`\`\``;
+      return `${index + 1}. [${item.severity.toUpperCase()}] ${item.title}\n   Ubicación: ${location}\n\`\`\`\n${item.excerpt.slice(0, 350)}\n\`\`\``;
     })
     .join("\n\n");
 

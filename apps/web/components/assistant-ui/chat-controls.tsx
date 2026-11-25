@@ -89,16 +89,22 @@ export const GeminiModelSelector: FC = () => {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="gemini-4-hydrogen">Gemini 4 Hydrogen</SelectItem>
         <SelectItem value="gemini-3.5-flash-lite">
-          Gemini 3.5 Flash-Lite (Rápido)
+          Gemini 3.5 Flash-Lite (Económico)
         </SelectItem>
         <SelectItem value="gemini-3.1-flash-lite">
-          Gemini 3.1 Flash-Lite
+          Gemini 3.1 Flash-Lite (Económico)
         </SelectItem>
-        <SelectItem value="gemini-3.8-flash">Gemini 3.8 Flash</SelectItem>
-        <SelectItem value="gemini-4-argon">Gemini 4 Argon</SelectItem>
-        <SelectItem value="gemini-4-carbon">Gemini 4 Carbon</SelectItem>
+        <SelectItem value="gemini-3.8-flash">
+          Gemini 3.8 Flash (Estándar)
+        </SelectItem>
+        <SelectItem value="gemini-4-hydrogen">
+          Gemini 4 Hydrogen (Potente)
+        </SelectItem>
+        <SelectItem value="gemini-4-argon">Gemini 4 Argon (Potente)</SelectItem>
+        <SelectItem value="gemini-4-carbon">
+          Gemini 4 Carbon (Potente)
+        </SelectItem>
       </SelectContent>
     </Select>
   );

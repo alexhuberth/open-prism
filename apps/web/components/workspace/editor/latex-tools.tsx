@@ -74,11 +74,12 @@ interface ToolResult {
 
 interface ReadProjectFileResult extends ToolResult {
   filePath?: string;
-  content?: string;
   numberedContent?: string;
   totalLines?: number;
   startLine?: number;
   endLine?: number;
+  hasMore?: boolean;
+  nextStartLine?: number;
 }
 
 interface ProposalSnapshot {
@@ -676,20 +677,22 @@ const READ_PROJECT_FILE_TOOL = {
     const allLines = rawContent.split("\n");
     const totalLines = allLines.length;
     const fromLine = Math.max(1, startLine ?? 1);
-    const toLine = Math.min(totalLines, endLine ?? totalLines);
+    const requestedEnd = endLine ?? fromLine + 179;
+    const toLine = Math.min(totalLines, Math.min(requestedEnd, fromLine + 249));
     const sliceLines = allLines.slice(fromLine - 1, toLine);
     const numberedContent = sliceLines
-      .map((line, i) => `${String(fromLine + i).padStart(4, " ")}: ${line}`)
+      .map((line, i) => `${fromLine + i}: ${line}`)
       .join("\n");
+    const hasMore = toLine < totalLines;
 
     return {
       success: true,
       filePath: target.name,
-      content: sliceLines.join("\n"),
       numberedContent,
       totalLines,
       startLine: fromLine,
       endLine: toLine,
+      ...(hasMore ? { hasMore: true, nextStartLine: toLine + 1 } : {}),
     };
   },
   render: ReadProjectFileRender,
@@ -773,9 +776,9 @@ const SEARCH_PROJECT_FILES_TOOL = {
           matches.push({
             filePath: file.name,
             line: i + 1,
-            text: lines[i].slice(0, 200),
+            text: lines[i].slice(0, 140),
           });
-          if (matches.length >= 40) {
+          if (matches.length >= 25) {
             return { success: true, query, matches };
           }
         }
@@ -864,9 +867,12 @@ interface EnrichedDiagnosticItem {
 function enrichDiagnosticsForAI(
   analysis: CompileAnalysisResult,
   files: ProjectFile[],
-  limit = 15,
+  limit = 8,
 ): EnrichedDiagnosticItem[] {
-  return analysis.diagnostics.slice(0, limit).map((d) => {
+  const ordered = [...analysis.diagnostics].sort((a, b) =>
+    a.severity === b.severity ? 0 : a.severity === "error" ? -1 : 1,
+  );
+  return ordered.slice(0, limit).map((d) => {
     let sourceSnippet: string | undefined;
     if (d.file && d.line != null) {
       const target = files.find(
@@ -876,7 +882,7 @@ function enrichDiagnosticsForAI(
           d.file?.endsWith(`/${f.name}`),
       );
       if (target && isTextFile(target) && target.content) {
-        const snippet = extractSourceSnippet(target.content, d.line, 6);
+        const snippet = extractSourceSnippet(target.content, d.line, 4);
         if (snippet) sourceSnippet = snippet;
       }
     }
@@ -885,7 +891,7 @@ function enrichDiagnosticsForAI(
       title: d.title,
       file: d.file,
       line: d.line,
-      excerpt: d.excerpt.slice(0, 800),
+      excerpt: d.excerpt.slice(0, 450),
       ...(sourceSnippet ? { sourceSnippet } : {}),
     };
   });
@@ -950,7 +956,7 @@ const GET_COMPILE_DIAGNOSTICS_TOOL = {
       ),
   }),
   execute: async ({
-    includeFullLog = true,
+    includeFullLog = false,
   }: {
     includeFullLog?: boolean;
   }): Promise<CompileDiagnosticsResult> => {
@@ -985,20 +991,23 @@ const GET_COMPILE_DIAGNOSTICS_TOOL = {
       files: state.files,
       mainFileId: state.mainFileId,
     });
+    const diagnostics = enrichDiagnosticsForAI(analysis, state.files, 8);
 
     return {
       success: true,
       compiler: state.compiler,
       mainFile: mainFile?.name,
       hasPdf: Boolean(state.pdfData),
-      compileError: state.compileError,
+      ...(diagnostics.length === 0 && state.compileError
+        ? { compileError: state.compileError.slice(0, 1000) }
+        : {}),
       errorCount: analysis.errorCount,
       warningCount: Math.max(state.compileWarningCount, analysis.warningCount),
       suggestedCompiler: analysis.suggestedCompiler,
       integrity,
-      diagnostics: enrichDiagnosticsForAI(analysis, state.files, 15),
+      diagnostics,
       ...(includeFullLog && fullLog
-        ? { fullLogTail: fullLog.slice(-18000) }
+        ? { fullLogTail: fullLog.slice(-4000) }
         : {}),
     };
   },
@@ -1245,16 +1254,20 @@ const COMPILE_PROJECT_TOOL = {
       mainFileName: mainFile?.name,
     });
 
+    const diagnostics = enrichDiagnosticsForAI(analysis, state.files, 6);
+
     return {
       success: true,
       compiled,
       compiler: state.compiler,
       hasPdf: Boolean(state.pdfData),
-      compileError: state.compileError,
+      ...(diagnostics.length === 0 && state.compileError
+        ? { compileError: state.compileError.slice(0, 800) }
+        : {}),
       errorCount: analysis.errorCount,
       warningCount: Math.max(state.compileWarningCount, analysis.warningCount),
       suggestedCompiler: analysis.suggestedCompiler,
-      diagnostics: enrichDiagnosticsForAI(analysis, state.files, 10),
+      diagnostics,
     };
   },
   render: CompileProjectRender,
@@ -1443,7 +1456,7 @@ const LIST_PROJECT_FILES_TOOL = {
       mainFile: mainFile?.name,
       activeFile: activeFile?.name,
       compiler: state.compiler,
-      files: state.files.map((f) => ({
+      files: state.files.slice(0, 80).map((f) => ({
         name: f.name,
         type: f.type,
         isMain: f.id === state.mainFileId,

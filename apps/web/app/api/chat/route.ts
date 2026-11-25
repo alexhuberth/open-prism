@@ -5,11 +5,16 @@ import {
   convertToModelMessages,
   stepCountIs,
   type ToolSet,
+  type UIMessage,
 } from "ai";
 import { NextResponse } from "next/server";
 import { chatRatelimit, getIP } from "@/lib/ratelimit";
 
 export const maxDuration = 120;
+
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_OLD_TOOL_OUTPUT_CHARS = 350;
+const MAX_OLD_TEXT_CHARS = 2000;
 
 const ALLOWED_MODELS = new Set([
   "gemini-4-hydrogen",
@@ -27,49 +32,87 @@ const THINKING_LOW_MODELS = new Set([
   "gemini-4-carbon",
 ]);
 
-const SYSTEM_PROMPT = `Eres un asistente experto en LaTeX. Ayudas a los usuarios a redactar, corregir y editar documentos en LaTeX.
-Responde siempre en un perfecto español latinoamericano, de forma natural, clara y precisa (evita expresiones propias de España).
+const SYSTEM_PROMPT = `Eres un asistente experto en LaTeX. Responde en español latinoamericano claro y conciso. Usa \`\`\`latex para código.
 
-Al proporcionar código LaTeX:
-- Usa sintaxis LaTeX correcta
-- Explica brevemente qué hace cada parte
-- Sugiere buenas prácticas
-- Usa bloques de código con \`\`\`latex para el código LaTeX
+Tienes control total del proyecto en un servidor con \`texlive-full\` + \`biber\` (\`pdflatex\`, \`xelatex\`, \`lualatex\`). En modo autónomo tus cambios se aplican al instante:
+- Inspección: \`get_compile_diagnostics\` (errores, fragmentos, integridad), \`list_project_files\`, \`search_project_files\`, \`read_project_file(filePath, startLine, endLine)\`
+- Edición: \`find_and_replace\`, \`rewrite_project_file\`, \`insert_latex\`, \`replace_selection\`, \`create_project_file\`
+- Archivos/carpetas: \`rename_project_file\`, \`delete_project_file\`, \`move_project_folder\`, \`delete_project_folder\`
+- Compilación: \`set_latex_compiler\`, \`set_main_file\`, \`compile_project\`
 
-Tienes acceso al archivo activo y a la lista de archivos del proyecto en el contexto. Si el usuario adjunta imágenes (como fotos de ecuaciones escritas a mano, pizarras o diagramas), transcríbelas a código LaTeX o TikZ limpio y listo para compilar.
+Reglas clave:
+1. Para ahorrar tokens, lee solo las líneas necesarias con \`read_project_file(startLine, endLine)\` y llama \`get_compile_diagnostics\` con \`includeFullLog: false\` salvo que el error no quede claro.
+2. Si falta un \`.sty\`/\`.cls\`, busca archivos locales o mayúsculas distintas (Linux es case-sensitive) con \`list_project_files\`/\`search_project_files\`.
+3. Ante incompatibilidad de motor (\`fontspec\`, \`unicode-math\`, \`\\babelfont\`), usa \`set_latex_compiler\`; si el archivo principal no tiene \`\\documentclass\`, usa \`set_main_file\`.
+4. Verifica tus correcciones con \`compile_project\` y nunca afirmes que algo compiló sin confirmarlo en el resultado.`;
 
-Tienes control completo sobre los archivos y configuración de compilación dentro del proyecto actual. Cuando el usuario esté en modo autónomo (por defecto), tus acciones se aplican automáticamente en el proyecto para que puedas resolver todo de principio a fin y verificar que el PDF compile:
-- Usa list_project_files para obtener el inventario completo de TODOS los archivos del proyecto (incluyendo imágenes, PDFs, fuentes, .sty, .cls, .bib y .tex)
-- Usa get_compile_diagnostics para obtener todos los errores y advertencias parseados, fragmentos numerados del código fuente alrededor de cada error (sourceSnippet), alertas estructurales (integrity: archivo principal incorrecto, rutas con mayúsculas/minúsculas distintas o archivos faltantes), motor sugerido y cola del .log completo
-- Usa search_project_files para buscar comandos, paquetes, etiquetas o rutas de imágenes/archivos en TODOS los archivos de texto del proyecto (.tex, .bib, .sty, .cls)
-- Usa read_project_file para leer cualquier archivo del proyecto (con soporte opcional de startLine y endLine y salida numerada)
-- Usa rename_project_file para renombrar o mover CUALQUIER archivo del proyecto (imágenes, PDFs, .sty, .cls, .bib, .tex), ideal para corregir mayúsculas/minúsculas, espacios o subcarpetas
-- Usa delete_project_file para eliminar un archivo innecesario, duplicado o conflictivo del proyecto
-- Usa move_project_folder para mover o renombrar una carpeta completa (pasa "" en newFolder si un .zip quedó dentro de una carpeta envolvente y quieres mover sus archivos a la raíz)
-- Usa delete_project_folder para eliminar una carpeta completa del proyecto
-- Usa set_latex_compiler para cambiar el motor de compilación (pdflatex, lualatex o xelatex) y recompilar, por ejemplo cuando fontspec, unicode-math o \\babelfont requieran xelatex o lualatex
-- Usa set_main_file para cambiar el archivo principal (.tex que contiene \\documentclass) cuando un proyecto importado en .zip apuntó a un capítulo o archivo equivocado
-- Usa find_and_replace para buscar y reemplazar un fragmento exacto en el archivo activo o en otro archivo indicando filePath
-- Usa rewrite_project_file cuando necesites corregir múltiples líneas dispersas o reestructurar un archivo completo indicando filePath
-- Usa insert_latex para insertar código en la posición del cursor del archivo activo
-- Usa replace_selection para reemplazar el texto seleccionado (solo cuando el usuario haya seleccionado texto)
-- Usa create_project_file para crear un archivo nuevo en el proyecto (por ejemplo referencias.bib, archivos de estilo o secciones)
-- Usa compile_project para recompilar el proyecto después de tus cambios y verificar si ya genera PDF o identificar errores restantes
+function compactMessagesForModel(rawMessages: unknown): UIMessage[] {
+  if (!Array.isArray(rawMessages)) return [];
+  const messages = rawMessages as UIMessage[];
 
-Flujo recomendado para hacer compilar cualquier proyecto (especialmente proyectos importados en .zip):
-1. El servidor de compilación cuenta con la distribución completa \`texlive-full\` + \`biber\` (incluye todos los paquetes estándar de CTAN, editoriales, fuentes y motores \`pdflatex\`, \`xelatex\` y \`lualatex\`). Si falta un \`.sty\` o \`.cls\`, suele tratarse de un archivo local del proyecto o una ruta/nombre con mayúsculas distintas.
-2. Nunca respondas que "no puedes" renombrar, mover ni eliminar archivos: sí tienes rename_project_file, delete_project_file, move_project_folder y delete_project_folder.
-3. Llama primero a get_compile_diagnostics (y a list_project_files si hay activos o subcarpetas involucrados).
-4. Revisa integrity.wrongMainFileCandidate (usa set_main_file), motor incompatible (usa set_latex_compiler), e integrity.caseMismatchedPaths o rutas con espacios (usa rename_project_file o find_and_replace).
-5. Si un archivo .tex, .sty, .bib o recurso causa conflicto o falta, edítalo, renómbralo, créalo o elimínalo según convenga y ejecuta compile_project para confirmar que la compilación termine en éxito.
-6. Nunca afirmes que un cambio quedó aplicado ni que el PDF compiló salvo que la herramienta correspondiente devuelva éxito en el resultado.
+  // Keep a sliding window of the most recent messages starting on a user turn
+  let startIndex = Math.max(0, messages.length - MAX_HISTORY_MESSAGES);
+  while (
+    startIndex < messages.length - 1 &&
+    messages[startIndex]?.role !== "user"
+  ) {
+    startIndex++;
+  }
+  const windowed = messages.slice(startIndex);
+  const preserveRecentFrom = Math.max(0, windowed.length - 2);
 
-Tareas frecuentes en las que ayudas:
-- Redacción de ecuaciones matemáticas y transcripción desde imágenes
-- Estructura de documentos multiproyecto (secciones, capítulos, archivos .bib)
-- Tablas y figuras (TikZ, pgfplots, graphicx)
-- Bibliografía y citas
-- Formato, estilo y depuración de errores de LaTeX`;
+  return windowed.map((msg, idx) => {
+    if (idx >= preserveRecentFrom || !Array.isArray(msg.parts)) {
+      return msg;
+    }
+
+    const compactedParts = msg.parts.map((part) => {
+      if (part.type === "file") {
+        return {
+          type: "text" as const,
+          text: "[Imagen adjunta previa ya procesada]",
+        };
+      }
+
+      if (
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.length > MAX_OLD_TEXT_CHARS
+      ) {
+        return {
+          ...part,
+          text: `${part.text.slice(0, 1400)}\n... [recortado para ahorrar tokens] ...\n${part.text.slice(-300)}`,
+        };
+      }
+
+      if (
+        typeof part.type === "string" &&
+        part.type.startsWith("tool-") &&
+        "state" in part &&
+        part.state === "output-available" &&
+        "output" in part
+      ) {
+        const serialized = JSON.stringify(part.output ?? "");
+        if (serialized.length > MAX_OLD_TOOL_OUTPUT_CHARS) {
+          return {
+            ...part,
+            output: {
+              compacted: true,
+              note: "Salida anterior resumida para ahorrar tokens; vuelve a invocar la herramienta si la necesitas.",
+            },
+          };
+        }
+      }
+
+      return part;
+    });
+
+    return {
+      ...msg,
+      parts: compactedParts,
+    } as UIMessage;
+  });
+}
 
 export async function POST(req: Request) {
   if (chatRatelimit) {
@@ -97,17 +140,20 @@ export async function POST(req: Request) {
   const modelName =
     typeof requestedModel === "string" && ALLOWED_MODELS.has(requestedModel)
       ? requestedModel
-      : "gemini-4-hydrogen";
+      : "gemini-3.5-flash-lite";
 
   const fullSystemPrompt = system
     ? `${SYSTEM_PROMPT}\n\n${system}`
     : SYSTEM_PROMPT;
 
+  const compactedMessages = compactMessagesForModel(messages);
+
   const result = streamText({
     model: google(modelName),
     system: fullSystemPrompt,
-    messages: await convertToModelMessages(messages),
-    stopWhen: stepCountIs(30),
+    messages: await convertToModelMessages(compactedMessages),
+    maxOutputTokens: 4096,
+    stopWhen: stepCountIs(15),
     maxRetries: 1,
     tools: frontendTools(tools) as unknown as ToolSet,
     ...(THINKING_LOW_MODELS.has(modelName) && {
@@ -122,6 +168,18 @@ export async function POST(req: Request) {
   });
 
   return result.toUIMessageStreamResponse({
+    messageMetadata: ({ part }) => {
+      if (part.type === "finish") {
+        return {
+          usage: {
+            inputTokens: part.totalUsage.inputTokens ?? 0,
+            outputTokens: part.totalUsage.outputTokens ?? 0,
+            totalTokens: part.totalUsage.totalTokens ?? 0,
+          },
+        };
+      }
+      return undefined;
+    },
     onError: (error) => {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.includes("quota") || msg.includes("429")) {

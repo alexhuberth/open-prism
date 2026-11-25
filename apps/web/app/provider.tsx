@@ -107,6 +107,28 @@ export function RootProvider({ children }: { children: ReactNode }) {
   const chat = useChat({
     transport,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onFinish: ({ message }) => {
+      const meta = message.metadata as
+        | {
+            usage?: {
+              inputTokens?: number;
+              outputTokens?: number;
+              totalTokens?: number;
+            };
+          }
+        | undefined;
+      if (meta?.usage) {
+        const input = meta.usage.inputTokens ?? 0;
+        const output = meta.usage.outputTokens ?? 0;
+        const total = meta.usage.totalTokens ?? input + output;
+        const store = useDocumentStore.getState();
+        store.setChatTokenUsage({
+          lastInput: input,
+          lastOutput: output,
+          sessionTotal: store.chatTokenUsage.sessionTotal + total,
+        });
+      }
+    },
     onError: (error) => {
       const message =
         error instanceof Error && error.message

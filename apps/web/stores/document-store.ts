@@ -92,11 +92,21 @@ interface DocumentState {
   initialized: boolean;
   chatError: string | null;
   chatSessionVersion: number;
+  chatTokenUsage: {
+    lastInput: number;
+    lastOutput: number;
+    sessionTotal: number;
+  };
   pendingProposals: Record<string, PendingProposal>;
 
   setHydrated: (hydrated: boolean) => void;
 
   setChatError: (error: string | null) => void;
+  setChatTokenUsage: (usage: {
+    lastInput: number;
+    lastOutput: number;
+    sessionTotal: number;
+  }) => void;
   resetActiveProjectChat: () => void;
   registerPendingProposal: (proposal: PendingProposal) => void;
   unregisterPendingProposal: (toolCallId: string) => void;
@@ -243,7 +253,7 @@ export const useDocumentStore = create<DocumentState>()(
       projects: [initialProject],
       activeProjectId: initialProject.id,
       projectSort: "updatedAt",
-      aiModel: "gemini-4-hydrogen",
+      aiModel: "gemini-3.5-flash-lite",
       aiAutonomousMode: true,
       files: initialProject.files,
       activeFileId: initialProject.activeFileId,
@@ -268,6 +278,7 @@ export const useDocumentStore = create<DocumentState>()(
       initialized: false,
       chatError: null,
       chatSessionVersion: 0,
+      chatTokenUsage: { lastInput: 0, lastOutput: 0, sessionTotal: 0 },
       pendingProposals: {},
 
       setHydrated: (hydrated) => set({ hydrated }),
@@ -278,6 +289,8 @@ export const useDocumentStore = create<DocumentState>()(
         }
       },
 
+      setChatTokenUsage: (chatTokenUsage) => set({ chatTokenUsage }),
+
       resetActiveProjectChat: () => {
         const activeId = get().activeProjectId;
         if (activeId) {
@@ -285,6 +298,7 @@ export const useDocumentStore = create<DocumentState>()(
         }
         set((state) => ({
           chatError: null,
+          chatTokenUsage: { lastInput: 0, lastOutput: 0, sessionTotal: 0 },
           pendingProposals: {},
           chatSessionVersion: state.chatSessionVersion + 1,
         }));
@@ -384,6 +398,7 @@ export const useDocumentStore = create<DocumentState>()(
           pdfData: null,
           ...RESET_COMPILE_DIAGNOSTICS,
           chatError: null,
+          chatTokenUsage: { lastInput: 0, lastOutput: 0, sessionTotal: 0 },
           pendingProposals: {},
           initialized: templateId === "showcase" ? false : state.initialized,
         }));
@@ -414,6 +429,7 @@ export const useDocumentStore = create<DocumentState>()(
           pdfData: null,
           ...RESET_COMPILE_DIAGNOSTICS,
           chatError: null,
+          chatTokenUsage: { lastInput: 0, lastOutput: 0, sessionTotal: 0 },
           pendingProposals: {},
         });
 
@@ -1056,7 +1072,7 @@ export const useDocumentStore = create<DocumentState>()(
           projects: data.projects,
           activeProjectId: activeProject.id,
           projectSort: data.projectSort ?? "updatedAt",
-          aiModel: data.aiModel ?? "gemini-4-hydrogen",
+          aiModel: data.aiModel ?? "gemini-3.5-flash-lite",
           aiAutonomousMode: data.aiAutonomousMode ?? true,
           files: activeProject.files,
           activeFileId,
